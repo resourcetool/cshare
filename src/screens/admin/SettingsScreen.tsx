@@ -5,7 +5,7 @@ import { Screen } from '../../components/Screen';
 import { DateTimeField } from '../../components/DateTimeField';
 import { AccountSection, AppearanceSettings, CalendarSettings, NotificationSettings, ProfileForm } from '../../components/ProfileSections';
 import { ReminderPicker } from '../../components/ReminderPicker';
-import { Badge, Body, Button, Card, Chip, ChipRow, Heading, IconBadge, Label, Notice, SectionTitle, Small, SwitchRow, TextField, Title } from '../../components/ui';
+import { Badge, Body, Button, Card, Chip, ChipRow, IconBadge, Label, Notice, SectionTitle, Small, SwitchRow, TextField, Title } from '../../components/ui';
 import { MEETING_TEMPLATES, TemplateLang, WEEKDAYS } from '../../constants';
 import { useAppData } from '../../context/AppDataContext';
 import { AdminNav } from '../../navigation/types';
