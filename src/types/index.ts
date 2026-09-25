@@ -38,7 +38,7 @@ export interface UserProfile {
   role: Role;
   active: boolean;
   /** Only an administrator explicitly appointed as secretary may view all group reports. */
-  secretary?: boolean;
+  secretary: boolean;
   /** The privilege(s) this person holds: one or two of PrivilegeRole. Set by an administrator only. */
   qualifications: PrivilegeRole[];
   /** How this person reports field service each month. Set by an administrator only. */
