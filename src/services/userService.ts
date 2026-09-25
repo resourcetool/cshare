@@ -14,6 +14,7 @@ export function mapUser(id: string, d: FT.DocumentData): UserProfile {
     phone: d.phone ?? '',
     role: d.role === 'admin' ? 'admin' : 'user',
     active: d.active === true,
+    // Missing secretary on older profiles means false.
     secretary: d.secretary === true,
     qualifications: Array.isArray(d.qualifications) ? d.qualifications : [],
     reportingType: d.reportingType === 'baptized_publisher' || d.reportingType === 'auxiliary_pioneer' || d.reportingType === 'regular_pioneer' ? d.reportingType : 'publisher',
@@ -140,13 +141,12 @@ export interface AdminUserPatch {
   phone?: string;
   role?: Role;
   active?: boolean;
+  secretary?: boolean;
   qualifications?: PrivilegeRole[];
   reportingType?: ReportingType;
   groupId?: string | null;
   /** set when an administrator approves someone */
   approve?: boolean;
-  /** Only meaningful when role is admin. */
-  secretary?: boolean;
 }
 
 export function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
