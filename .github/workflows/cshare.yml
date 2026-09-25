@@ -1,29 +1,92 @@
-{
-  "project_info": {
-    "project_number": "102240826607",
-    "project_id": "cshare-2fac4",
-    "storage_bucket": "cshare-2fac4.firebasestorage.app"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:102240826607:android:6d91437727580f56d1d71a",
-        "android_client_info": {
-          "package_name": "com.cshare"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDb1aWUNJtJIgTUqZ7GRYsbKk9EDASm4vM"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
+name: CSHARE tasks
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: What should I do?
+        type: choice
+        default: unpack-zip
+        options:
+          - unpack-zip
+          - build-apk
+
+permissions:
+  contents: write
+
+jobs:
+  unpack-zip:
+    if: ${{ inputs.task == 'unpack-zip' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack CSHARE.zip into the repository
+        run: |
+          test -f CSHARE.zip || { echo "::error::Upload CSHARE.zip to the top of the repository first"; exit 1; }
+          unzip -q -o CSHARE.zip -d "$RUNNER_TEMP/unz"
+          cp -a "$RUNNER_TEMP/unz/CSHARE/." .
+          rm -f CSHARE.zip
+      - name: Commit the project
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add -A
+          git commit -m "Add CSHARE project"
+          git push
+
+  build-apk:
+    if: ${{ inputs.task == 'build-apk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Add Firebase config file from the secret
+        env:
+          GS: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GS" ]; then echo "::error::Missing secret GOOGLE_SERVICES_JSON (paste the contents of google-services.json)"; exit 1; fi
+          printf '%s' "$GS" > android/app/google-services.json
+
+      # Package versions are frozen to what existed on this date, so every build uses the same
+      # libraries that match React Native 0.76. Newer releases can break this build.
+      - name: Install packages (frozen versions)
+        run: npm install --no-audit --no-fund --legacy-peer-deps --before=2025-04-15
+
+      - name: Type-check (informational)
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Unit tests (informational)
+        continue-on-error: true
+        run: npx jest
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Android SDK pieces
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          ls "$SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125"
+
+      - name: Create Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version 8.10.2
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CSHARE-apk
+          path: android/app/build/outputs/apk/release/*.apk
