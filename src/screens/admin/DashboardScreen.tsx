@@ -37,7 +37,7 @@ export default function DashboardScreen() {
     { icon: '📋', label: settings.weekendName, onPress: () => nav.navigate('Week', { meeting: 'weekend' }) },
     { icon: '👥', label: 'People', onPress: () => nav.navigate('People') },
     { icon: '🧭', label: 'Ministry groups', onPress: () => nav.navigate('Groups') },
-    { icon: '📊', label: 'Group reports', onPress: () => nav.navigate('GroupReport', undefined) },
+    ...(profile.secretary ? [{ icon: '📊', label: 'Group reports', onPress: () => nav.navigate('GroupReport', undefined) }] : []),
     { icon: '⚙️', label: 'Settings', onPress: () => nav.navigate('Settings') },
   ];
 
