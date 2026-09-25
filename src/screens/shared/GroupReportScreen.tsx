@@ -1,12 +1,13 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
 import { Badge, Body, Button, Card, EmptyState, Heading, LoadingView, Notice, Small, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { useLive } from '../../hooks/useLive';
-import { AdminStackParams } from '../../navigation/types';
+import { SharedStackParams } from '../../navigation/types';
 import { subscribeToGroups } from '../../services/groupService';
 import { subscribeToGroupReports } from '../../services/reportService';
 import { MinistryGroup, MonthlyReport } from '../../types';
@@ -15,17 +16,19 @@ import { formatMonthLong } from '../../utils/dates';
 import { REPORTING_TYPE_LABELS, summarizeReport } from '../../utils/reports';
 
 export default function GroupReportScreen() {
-  const navigation = useNavigation();
-  const route = useRoute<RouteProp<AdminStackParams, 'GroupReport'>>();
+  const navigation = useNavigation<NativeStackNavigationProp<SharedStackParams>>();
+  const route = useRoute<RouteProp<SharedStackParams, 'GroupReport'>>();
   const { profile, currentMonthKey } = useAppData();
   const groups = useLive<MinistryGroup[]>(subscribeToGroups, []);
 
   const requestedGroupId = route.params?.groupId;
-  const canViewAllGroups = profile.role === 'admin' && profile.secretary === true;
   const overseerGroup = useMemo(
     () => (groups.data ?? []).find(g => g.overseerId === profile.id),
     [groups.data, profile.id],
   );
+  const canViewAllGroups = profile.role === 'admin' && profile.secretary === true;
+  const canViewAssignedGroup = !!overseerGroup;
+  const canViewGroupReports = canViewAllGroups || canViewAssignedGroup;
   const selectedGroupId = canViewAllGroups ? requestedGroupId : overseerGroup?.id;
   const selectedGroup = useMemo(
     () => (groups.data ?? []).find(g => g.id === selectedGroupId),
@@ -39,7 +42,11 @@ export default function GroupReportScreen() {
 
   if (groups.loading && !groups.data) return <Screen><LoadingView /></Screen>;
 
-  // Administrators can enter this page without a groupId and choose a group.
+  if (!canViewGroupReports) {
+    return <Screen><EmptyState title="Group reports restricted" message="Only an administrator appointed as secretary can view reports for all ministry groups. A ministry group overseer can view reports for the group assigned to them." /></Screen>;
+  }
+
+  // Secretaries can enter this page without a groupId and choose a group.
   if (canViewAllGroups && !selectedGroupId) {
     return (
       <Screen>
@@ -61,7 +68,7 @@ export default function GroupReportScreen() {
     );
   }
 
-  // A normal user may only use this screen when they are the assigned overseer.
+  // A non-secretary may only use this screen when they are the assigned overseer.
   if (!canViewAllGroups && !overseerGroup) {
     return <Screen><EmptyState title="No group report" message="You are not currently assigned as a ministry group overseer." /></Screen>;
   }
