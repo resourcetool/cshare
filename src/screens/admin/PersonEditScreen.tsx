@@ -174,7 +174,7 @@ export default function PersonEditScreen() {
       ) : (
         <>
           {!waiting ? <SwitchRow label="Account is active" description="Turn off to stop this person using CSHARE." value={active} onValueChange={setActive} /> : null}
-          <SwitchRow label="Administrator" description="Can manage people and assignments." value={admin} onValueChange={value => { setAdmin(value); if (!value) setSecretary(false); }} />
+          <SwitchRow label="Administrator" description="Can manage people and assignments." value={admin} onValueChange={v => { setAdmin(v); if (!v) setSecretary(false); }} />
           {admin ? <SwitchRow label="Secretary" description="Can view monthly reports for every ministry group." value={secretary} onValueChange={setSecretary} /> : null}
         </>
       )}
