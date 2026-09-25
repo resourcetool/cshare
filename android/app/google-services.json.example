@@ -1,0 +1,11 @@
+{
+  "_readme": "Do not use this file. Download the real google-services.json from Firebase console > Project settings > Your apps > Android (package name com.cshare) and save it as android/app/google-services.json",
+  "project_info": { "project_number": "000000000000", "project_id": "your-firebase-project-id", "storage_bucket": "your-firebase-project-id.appspot.com" },
+  "client": [
+    {
+      "client_info": { "mobilesdk_app_id": "1:000000000000:android:0000000000000000", "android_client_info": { "package_name": "com.cshare" } },
+      "api_key": [ { "current_key": "REPLACE_WITH_YOUR_API_KEY" } ]
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "CSHARE",
+  "displayName": "CSHARE",
+  "expo": {
+    "name": "CSHARE",
+    "slug": "cshare",
+    "version": "1.0.0",
+    "android": { "package": "com.cshare" }
+  }
+}

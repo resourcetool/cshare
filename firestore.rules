@@ -1,0 +1,209 @@
+rules_version = '2';
+
+// CSHARE security rules.
+// Authorization is enforced HERE, on the server. Hiding buttons in the app is not security.
+// The client's role checks (profile.role === 'admin') are a convenience for the UI only —
+// every one of the checks below is what actually stops a tampered or malicious client.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function profilePath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function groupPath(groupId) { return /databases/$(database)/documents/groups/$(groupId); }
+    function myProfile() { return get(profilePath(request.auth.uid)).data; }
+    function isActive() {
+      return signedIn() && exists(profilePath(request.auth.uid)) && myProfile().active == true;
+    }
+    function isAdmin() { return isActive() && myProfile().role == 'admin'; }
+
+    function shortText(v, max) { return v is string && v.size() <= max; }
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function isTime(v) { return v is string && v.matches('^[0-9]{2}:[0-9]{2}$'); }
+
+    // ---------------------------------------------------------------- users
+    match /users/{uid} {
+      // Own profile, or admins, or the contact details of active administrators (for "Contact admin").
+      allow read: if signedIn() && (
+        request.auth.uid == uid ||
+        isAdmin() ||
+        (isActive() && resource.data.role == 'admin' && resource.data.active == true)
+      );
+
+      // Self sign-up: always a plain, INACTIVE user with no qualifications and no dependents.
+      // An admin must approve the account, and only an admin can ever set reportingType, a
+      // dependent or a group — a brand new signup defaults to "publisher" with no group.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(
+             ['name', 'email', 'phone', 'role', 'active', 'qualifications', 'reportingType', 'dependents',
+              'notificationPreferences', 'fcmTokens', 'createdAt', 'updatedAt'])
+        && request.resource.data.role == 'user'
+        && request.resource.data.active == false
+        && request.resource.data.qualifications == []
+        && request.resource.data.reportingType == 'publisher'
+        && request.resource.data.dependents == []
+        && request.resource.data.email == request.auth.token.email
+        && shortText(request.resource.data.name, 80) && request.resource.data.name.size() > 0
+        && shortText(request.resource.data.phone, 30)
+        && request.resource.data.fcmTokens is list;
+
+      allow update: if signedIn() && (
+        // A person may only change their own personal fields — never role / active /
+        // qualifications / reportingType / group / dependents. This is what actually stops
+        // someone granting themselves admin access or a qualification by editing the app.
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+               ['name', 'phone', 'notificationPreferences', 'fcmTokens', 'lastActiveAt', 'updatedAt'])
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.active == resource.data.active
+          && request.resource.data.qualifications == resource.data.qualifications
+          && request.resource.data.get('reportingType', 'publisher') == resource.data.get('reportingType', 'publisher')
+          && request.resource.data.get('groupId', null) == resource.data.get('groupId', null)
+          && request.resource.data.dependents == resource.data.dependents
+          && shortText(request.resource.data.name, 80) && request.resource.data.name.size() > 0
+          && shortText(request.resource.data.phone, 30)
+          && request.resource.data.fcmTokens is list)
+        ||
+        // Admins manage everyone, but cannot remove their own admin access (prevents lock-out).
+        // "dependents" are children with no phone; reportingType and group are also
+        // administrator-only, same as a qualification.
+        (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+               ['name', 'phone', 'role', 'active', 'qualifications', 'reportingType', 'groupId', 'dependents', 'approvedAt', 'updatedAt'])
+          && request.resource.data.role in ['admin', 'user']
+          && request.resource.data.qualifications is list
+          && request.resource.data.get('reportingType', 'publisher') in ['publisher', 'baptized_publisher', 'auxiliary_pioneer', 'regular_pioneer']
+          && request.resource.data.dependents is list
+          && (uid != request.auth.uid ||
+              (request.resource.data.role == 'admin' && request.resource.data.active == true)))
+      );
+
+      allow delete: if false; // deactivate instead
+    }
+
+    // ---------------------------------------------------------- assignments
+    function validResponse(r) {
+      return r is map
+        && r.keys().hasOnly(['status', 'at', 'reason', 'adminId'])
+        && r.status in ['seen', 'cannot_do']
+        && r.at is timestamp
+        && (!('reason' in r) || shortText(r.reason, 300))
+        && (!('adminId' in r) || r.adminId is string);
+    }
+
+    // The only change a normal user may ever make: their OWN entry inside "responses".
+    // They cannot touch assigneeIds, assigneeNames, the schedule, or anyone else's response —
+    // so a user can never add or remove themselves (or anyone else) from an assignment.
+    function onlyMyResponseChanged() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return after.diff(before).affectedKeys().hasOnly(['responses'])
+        && after.responses.diff(before.get('responses', {})).affectedKeys().hasOnly([request.auth.uid])
+        && validResponse(after.responses[request.auth.uid]);
+    }
+
+    // Basic shape/type checks on every admin write, so a corrupted or malformed record
+    // (wrong types, a missing required field, an unreasonable assignee list) can never reach
+    // Firestore even from a legitimate admin session with a bug in it.
+    function validAssignment(d) {
+      return d.title is string && d.title.size() > 0 && d.title.size() <= 200
+        && d.weekId is string && d.weekId.size() > 0
+        && isDate(d.date)
+        && isTime(d.startTime)
+        && d.startAt is timestamp
+        && d.assigneeIds is list && d.assigneeIds.size() <= 20
+        && d.assigneeNames is map
+        && d.status in ['scheduled', 'cancelled']
+        && d.requiresQualification is bool
+        && d.reminderOffsetsMinutes is list
+        && d.sortOrder is number
+        && (!('endTime' in d) || d.endTime == null || isTime(d.endTime))
+        && (!('childAssignees' in d) || d.childAssignees is list)
+        && (!('meeting' in d) || d.meeting == null || d.meeting in ['midweek', 'weekend']);
+    }
+
+    match /assignments/{assignmentId} {
+      allow read: if isAdmin() || (isActive() && request.auth.uid in resource.data.assigneeIds);
+      allow create: if isAdmin() && validAssignment(request.resource.data);
+      allow delete: if isAdmin();
+      allow update: if (isAdmin() && validAssignment(request.resource.data)) ||
+        (isActive() && request.auth.uid in resource.data.assigneeIds && onlyMyResponseChanged());
+    }
+
+    // ------------------------------------------ shared reference data
+    // The weekly meeting program (who is chairman, who has which part, etc.) is, by design,
+    // shared with the whole congregation the same way a printed schedule on a noticeboard is —
+    // that is why any active person, not just admins, can read it. What stays private per
+    // person is the "assignments" collection above (their personal responses and reminders).
+    match /weeks/{weekId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+    match /assignmentTypes/{typeId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+    match /settings/{docId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ------------------------------------------------------ monthly field service reports
+    // Doc id is always "{uid}_{monthKey}" (enforced below), so there can only ever be one report
+    // per person per month. A normal user may only ever CREATE their own — the moment that
+    // document exists, the very same request is evaluated as an UPDATE, which only an
+    // administrator may do. That is what actually stops an accidental duplicate/overwritten
+    // report, not just the app's own "already submitted" screen.
+    function validReport(d) {
+      return d.uid is string && d.uid.size() > 0
+        && d.monthKey is string && d.monthKey.matches('^[0-9]{4}-[0-9]{2}$')
+        && d.reportingType in ['publisher', 'baptized_publisher', 'auxiliary_pioneer', 'regular_pioneer']
+        && d.createdBy is string
+        && d.submittedAt is timestamp
+        && (!('participated' in d) || d.participated is bool)
+        && (!('hours' in d) || (d.hours is number && d.hours >= 0 && d.hours <= 750))
+        && (!('bibleStudies' in d) || (d.bibleStudies is number && d.bibleStudies >= 0 && d.bibleStudies <= 200))
+        && (!('groupId' in d) || d.groupId is string)
+        && (!('reporterName' in d) || (d.reporterName is string && d.reporterName.size() > 0 && d.reporterName.size() <= 80));
+    }
+
+    match /reports/{reportId} {
+      function isGroupOverseer(groupId) {
+        return isActive()
+          && groupId is string
+          && exists(groupPath(groupId))
+          && get(groupPath(groupId)).data.overseerId == request.auth.uid;
+      }
+
+      // A person can read their own report. Administrators can read all reports. A ministry
+      // group overseer can read reports that were submitted to their assigned group.
+      allow read: if isAdmin()
+        || (isActive() && resource.data.uid == request.auth.uid)
+        || (isActive() && ('groupId' in resource.data) && isGroupOverseer(resource.data.groupId));
+      allow create: if isActive()
+        && validReport(request.resource.data)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && reportId == request.resource.data.uid + '_' + request.resource.data.monthKey
+        && request.resource.data.get('reporterName', '') == myProfile().name
+        && request.resource.data.get('groupId', null) == myProfile().get('groupId', null);
+      // Corrections only, by an administrator, and never to a different person/month.
+      allow update: if isAdmin() && validReport(request.resource.data)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.monthKey == resource.data.monthKey;
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------ ministry groups
+    function validGroup(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && d.sortOrder is number
+        && (!('overseerId' in d) || d.overseerId == null || d.overseerId is string);
+    }
+
+    match /groups/{groupId} {
+      allow read: if isActive();
+      allow create, update: if isAdmin() && validGroup(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}
