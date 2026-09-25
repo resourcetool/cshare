@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "102240826607",
+    "project_id": "cshare-2fac4",
+    "storage_bucket": "cshare-2fac4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102240826607:android:6d91437727580f56d1d71a",
+        "android_client_info": {
+          "package_name": "com.cshare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDb1aWUNJtJIgTUqZ7GRYsbKk9EDASm4vM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
