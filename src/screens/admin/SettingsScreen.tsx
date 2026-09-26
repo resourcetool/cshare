@@ -8,10 +8,13 @@ import { ReminderPicker } from '../../components/ReminderPicker';
 import { Badge, Body, Button, Card, Chip, ChipRow, IconBadge, Label, Notice, SectionTitle, Small, SwitchRow, TextField, Title } from '../../components/ui';
 import { MEETING_TEMPLATES, TemplateLang, WEEKDAYS } from '../../constants';
 import { useAppData } from '../../context/AppDataContext';
+import { useLive } from '../../hooks/useLive';
 import { AdminNav } from '../../navigation/types';
 import { loadMeetingTemplate, saveSettings } from '../../services/settingsService';
+import { saveAppUpdate, subscribeToAppUpdate } from '../../services/updateService';
+import { subscribeToUsers } from '../../services/userService';
 import { confirmAsync } from '../../components/confirm';
-import { AppSettings } from '../../types';
+import { AppSettings, AppUpdateConfig, UserProfile } from '../../types';
 import { space } from '../../theme';
 import { friendlyError } from '../../utils/errors';
 
@@ -28,7 +31,16 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 export default function SettingsScreen() {
   const nav = useNavigation<AdminNav>();
-  const { settings, types } = useAppData();
+  const { profile, settings, types } = useAppData();
+  const appUpdate = useLive<AppUpdateConfig | null>(subscribeToAppUpdate, []);
+  const users = useLive<UserProfile[]>(subscribeToUsers, []);
+  const [updateVersion, setUpdateVersion] = useState('');
+  const [updateCode, setUpdateCode] = useState('');
+  const [updateUrl, setUpdateUrl] = useState('');
+  const [updateMessage, setUpdateMessage] = useState('A new CSHARE update is available.');
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,6 +50,16 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!dirty) setDraft(settings);
   }, [settings, dirty]);
+
+  useEffect(() => {
+    const u = appUpdate.data;
+    if (!u) return;
+    setUpdateVersion(u.versionName);
+    setUpdateCode(String(u.versionCode));
+    setUpdateUrl(u.url);
+    setUpdateMessage(u.message);
+    setUpdateAvailable(u.available);
+  }, [appUpdate.data]);
 
   const change = (patch: Partial<AppSettings>) => {
     setDraft(d => ({ ...d, ...patch }));
@@ -62,6 +84,49 @@ export default function SettingsScreen() {
       setMessage({ tone: 'bad', text: friendlyError(e) });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveUpdate = async () => {
+    const versionCode = Number(updateCode);
+    if (!updateVersion.trim()) return setUpdateNotice({ tone: 'bad', text: 'Enter the version name.' });
+    if (!Number.isInteger(versionCode) || versionCode < 1) return setUpdateNotice({ tone: 'bad', text: 'Version code must be a whole number.' });
+    if (!updateUrl.trim().startsWith('http')) return setUpdateNotice({ tone: 'bad', text: 'Paste the Google Drive sharing link.' });
+    setUpdateBusy(true);
+    setUpdateNotice(null);
+    try {
+      const r = await saveAppUpdate({
+        available: updateAvailable,
+        versionName: updateVersion,
+        versionCode,
+        url: updateUrl,
+        message: updateMessage,
+      });
+      setUpdateNotice({ tone: 'good', text: r === 'queued' ? 'Update information saved on this phone and will sync when online.' : 'Update information published.' });
+    } catch (e) {
+      setUpdateNotice({ tone: 'bad', text: friendlyError(e) });
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const disableUpdate = async () => {
+    setUpdateBusy(true);
+    setUpdateNotice(null);
+    try {
+      const r = await saveAppUpdate({
+        available: false,
+        versionName: updateVersion || '0.0',
+        versionCode: Number(updateCode) || 1,
+        url: updateUrl,
+        message: updateMessage,
+      });
+      setUpdateAvailable(false);
+      setUpdateNotice({ tone: 'good', text: r === 'queued' ? 'Update notice disabled on this phone and will sync when online.' : 'Update notice disabled.' });
+    } catch (e) {
+      setUpdateNotice({ tone: 'bad', text: friendlyError(e) });
+    } finally {
+      setUpdateBusy(false);
     }
   };
 
@@ -200,6 +265,47 @@ export default function SettingsScreen() {
         </Small>
         <ReminderPicker value={draft.reminderOffsetsMinutes} onChange={v => change({ reminderOffsetsMinutes: v })} />
       </Group>
+
+      {/* DEVELOPER -------------------------------------------------------------------- */}
+      {profile.developer ? (
+        <Group title="Developer">
+          <SectionTitle>App update</SectionTitle>
+          <Small style={{ marginBottom: space.md }}>
+            Upload the new APK to Google Drive, paste its sharing link here, set the version, then turn the update on. Users will see the update card on their home screen.
+          </Small>
+          {updateNotice ? <Notice tone={updateNotice.tone} message={updateNotice.text} /> : null}
+          <TextField label="Version name" value={updateVersion} onChangeText={setUpdateVersion} placeholder="For example: 1.1" />
+          <TextField label="Version code" value={updateCode} onChangeText={setUpdateCode} keyboardType="number-pad" placeholder="For example: 2" />
+          <TextField label="Google Drive APK link" value={updateUrl} onChangeText={setUpdateUrl} autoCapitalize="none" keyboardType="url" placeholder="https://drive.google.com/..." />
+          <TextField label="Update message" value={updateMessage} onChangeText={setUpdateMessage} multiline />
+          <SwitchRow
+            label="Show update to users"
+            description="Turn this on only after the APK is already in Google Drive."
+            value={updateAvailable}
+            onValueChange={setUpdateAvailable}
+            disabled={updateBusy}
+          />
+          <View style={{ flexDirection: 'row', gap: space.md, marginTop: space.md }}>
+            <Button label="Save update" onPress={saveUpdate} loading={updateBusy} style={{ flex: 1 }} />
+            <Button label="Turn off" variant="secondary" onPress={disableUpdate} loading={updateBusy} style={{ flex: 1 }} />
+          </View>
+
+          <SectionTitle>Update status</SectionTitle>
+          {appUpdate.data?.available ? (
+            <Small>
+              Published version: {appUpdate.data.versionName} (code {appUpdate.data.versionCode})
+            </Small>
+          ) : (
+            <Small>No update is currently advertised.</Small>
+          )}
+          <Small style={{ marginTop: space.sm }}>
+            Active users reporting the latest version: {(users.data ?? []).filter(u => u.active && u.appVersionCode === (appUpdate.data?.versionCode ?? -1)).length} of {(users.data ?? []).filter(u => u.active).length}
+          </Small>
+          {(users.data ?? []).filter(u => u.active && appUpdate.data?.versionCode && u.appVersionCode !== appUpdate.data.versionCode).slice(0, 10).map(u => (
+            <Small key={u.id} style={{ marginTop: 4 }}>• {u.name} — {u.appVersion ?? 'not reported'}</Small>
+          ))}
+        </Group>
+      ) : null}
 
       {/* MY CSHARE --------------------------------------------------------------------- */}
       <Group title="My CSHARE">
