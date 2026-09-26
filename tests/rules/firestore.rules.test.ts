@@ -59,7 +59,7 @@ beforeEach(async () => {
 });
 
 describe('sign-up', () => {
-  const base = { name: 'New', email: 'newbie@example.com', phone: '+1', role: 'user', active: false, qualifications: [], reportingType: 'publisher', dependents: [], notificationPreferences: { reminders: true, callStyle: true }, fcmTokens: [] };
+  const base = { name: 'New', email: 'newbie@example.com', phone: '+1', role: 'user', active: false, developer: false, secretary: false, qualifications: [], reportingType: 'publisher', dependents: [], notificationPreferences: { reminders: true, callStyle: true }, fcmTokens: [] };
 
   it('lets a new person create their own INACTIVE user profile', async () => {
     await assertSucceeds(setDoc(doc(as('newbie'), 'users/newbie'), base));
