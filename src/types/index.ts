@@ -37,6 +37,14 @@ export interface UserProfile {
   phone: string;
   role: Role;
   active: boolean;
+  /** Can manage the private in-app update controls. Set once by the developer; admins cannot grant this permission. */
+  developer: boolean;
+  /** Whether this administrator may view monthly reports for every ministry group. */
+  secretary: boolean;
+  /** Version last reported by this phone. */
+  appVersion?: string;
+  appVersionCode?: number;
+  lastAppSeenAt?: Date;
   /** The privilege(s) this person holds: one or two of PrivilegeRole. Set by an administrator only. */
   qualifications: PrivilegeRole[];
   /** How this person reports field service each month. Set by an administrator only. */
@@ -194,6 +202,15 @@ export interface AssignmentType {
   meeting: Meeting;
   /** the minimum privilege required for this part, if any (see PrivilegeRole) */
   requiredRole?: PrivilegeRole;
+}
+
+export interface AppUpdateConfig {
+  available: boolean;
+  versionName: string;
+  versionCode: number;
+  url: string;
+  message: string;
+  updatedAt?: Date;
 }
 
 export interface AppSettings {
