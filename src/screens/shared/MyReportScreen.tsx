@@ -64,12 +64,20 @@ export default function MyReportScreen() {
     [profile.id, previousKey],
   );
 
+  // Non-pioneer users do not have daily service-entry records. The old no-op
+  // subscription left useLive() in its initial loading state forever, so their
+  // report page could spin indefinitely. Complete the subscription immediately
+  // with an empty list when daily entries are not applicable.
   const currentEntriesLive = useLive<FieldServiceEntry[]>(
-    (ok, err) => needsHours ? subscribeToMyServiceEntries(profile.id, currentMonthKey, ok, err) : () => {},
+    (ok, err) => needsHours
+      ? subscribeToMyServiceEntries(profile.id, currentMonthKey, ok, err)
+      : (() => { ok([]); return () => {}; })(),
     [profile.id, currentMonthKey, needsHours],
   );
   const previousEntriesLive = useLive<FieldServiceEntry[]>(
-    (ok, err) => needsHours ? subscribeToMyServiceEntries(profile.id, previousKey, ok, err) : () => {},
+    (ok, err) => needsHours
+      ? subscribeToMyServiceEntries(profile.id, previousKey, ok, err)
+      : (() => { ok([]); return () => {}; })(),
     [profile.id, previousKey, needsHours],
   );
 
