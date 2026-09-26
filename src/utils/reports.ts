@@ -27,7 +27,8 @@ export function hourReferenceFor(type: ReportingType, settings: Pick<AppSettings
 /** True once the form has what it needs to submit, for this reporting type. */
 export function reportIsComplete(type: ReportingType, draft: Partial<MonthlyReportInput>): boolean {
   if (reportsHours(type)) return typeof draft.hours === 'number' && draft.hours >= 0;
-  return typeof draft.participated === 'boolean';
+  if (draft.participated !== true) return draft.participated === false;
+  return typeof draft.bibleStudies === 'number' && Number.isInteger(draft.bibleStudies) && draft.bibleStudies >= 0;
 }
 
 /** A short line summarising an already-submitted report, for the "view your report" screen. */
@@ -36,7 +37,14 @@ export function summarizeReport(type: ReportingType, r: Partial<MonthlyReportInp
     const studies = r.bibleStudies ? `, ${r.bibleStudies} Bible ${r.bibleStudies === 1 ? 'study' : 'studies'}` : '';
     return `${r.hours ?? 0} hour${r.hours === 1 ? '' : 's'}${studies}`;
   }
-  return r.participated ? 'Had a part in the ministry' : 'Did not have a part in the ministry';
+
+  if (!r.participated) return 'Did not have a part in the ministry';
+
+  const studies = typeof r.bibleStudies === 'number'
+    ? `, ${r.bibleStudies} Bible ${r.bibleStudies === 1 ? 'study' : 'studies'}`
+    : '';
+
+  return `Had a part in the ministry${studies}`;
 }
 
 /**
