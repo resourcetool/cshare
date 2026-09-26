@@ -1,6 +1,7 @@
 import firestore, { FirebaseFirestoreTypes as FT } from '@react-native-firebase/firestore';
 import { Dependent, NotificationPreferences, PrivilegeRole, ReportingType, Role, UserProfile } from '../types';
 import { toDate } from '../utils/dates';
+import { APP_VERSION_CODE, APP_VERSION_NAME } from '../config/appVersion';
 import { commit, CommitResult } from './commit';
 
 const users = () => firestore().collection('users');
@@ -14,8 +15,11 @@ export function mapUser(id: string, d: FT.DocumentData): UserProfile {
     phone: d.phone ?? '',
     role: d.role === 'admin' ? 'admin' : 'user',
     active: d.active === true,
-    // Missing secretary on older profiles means false.
+    developer: d.developer === true,
     secretary: d.secretary === true,
+    appVersion: typeof d.appVersion === 'string' ? d.appVersion : undefined,
+    appVersionCode: typeof d.appVersionCode === 'number' ? d.appVersionCode : undefined,
+    lastAppSeenAt: toDate(d.lastAppSeenAt),
     qualifications: Array.isArray(d.qualifications) ? d.qualifications : [],
     reportingType: d.reportingType === 'baptized_publisher' || d.reportingType === 'auxiliary_pioneer' || d.reportingType === 'regular_pioneer' ? d.reportingType : 'publisher',
     groupId: typeof d.groupId === 'string' ? d.groupId : undefined,
@@ -69,6 +73,7 @@ export function createProfile(
       phone: data.phone.trim(),
       role: 'user',
       active: false,
+      developer: false,
       secretary: false,
       qualifications: [],
       reportingType: 'publisher',
@@ -89,7 +94,12 @@ export function updateMyProfile(
 }
 
 export async function touchLastActive(uid: string): Promise<void> {
-  await users().doc(uid).update({ lastActiveAt: now() });
+  await users().doc(uid).update({
+    lastActiveAt: now(),
+    appVersion: APP_VERSION_NAME,
+    appVersionCode: APP_VERSION_CODE,
+    lastAppSeenAt: now(),
+  });
 }
 
 export async function addFcmToken(uid: string, token: string): Promise<void> {
