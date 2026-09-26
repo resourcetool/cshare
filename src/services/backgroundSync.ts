@@ -64,17 +64,27 @@ export async function announceNew(assignments: Assignment[], uid: string, enable
   const next: Record<string, number> = {};
   const fresh: { a: Assignment; changed: boolean }[] = [];
 
+  const assignmentAwarenessWindowMs = 14 * 24 * 60 * 60 * 1000;
+
   for (const a of assignments) {
     if (a.status !== 'scheduled' || a.responses[uid]?.status === 'cannot_do' || a.startAt.getTime() < nowMs) continue;
     const ms = a.startAt.getTime();
     next[a.id] = ms;
-    // people are not told about what they saved themselves
-    if (known && known[a.id] !== ms && a.updatedBy !== uid) fresh.push({ a, changed: known[a.id] !== undefined });
+
+    // People are not told about what they saved themselves. On the first sync, only announce
+    // assignments that were created/updated recently; this prevents a fresh install from
+    // ringing for ancient historical assignments while still catching an assignment that was
+    // made while this phone was offline.
+    const lastChanged = a.updatedAt?.getTime() ?? a.createdAt?.getTime() ?? 0;
+    const recentlyChanged = lastChanged > 0 && nowMs - lastChanged <= assignmentAwarenessWindowMs;
+    if (a.updatedBy !== uid && (!known || known[a.id] === undefined || known[a.id] !== ms) && (known || recentlyChanged)) {
+      fresh.push({ a, changed: known[a.id] !== undefined });
+    }
   }
 
   all[uid] = next;
   await AsyncStorage.setItem(KNOWN_KEY, JSON.stringify(all));
-  if (!known || !enabled || fresh.length === 0) return;
+  if (!enabled || fresh.length === 0) return;
 
   await ensureChannels();
   for (const { a, changed } of fresh) {
@@ -83,12 +93,11 @@ export async function announceNew(assignments: Assignment[], uid: string, enable
       id: `cshare-new|${a.id}|${a.startAt.getTime()}`, // same id = never shown twice
       title: 'CSHARE',
       body: changed
-        ? `Changed: ${a.title} is now ${when}.`
-        : callStyle
-          ? `You have a new assignment: ${a.title}. Please check the CSHARE app.`
-          : `New assignment: ${a.title}, ${when}.`,
+        ? `Changed: ${a.title} is now ${when}. Please check the CSHARE app.`
+        : `You have a new assignment: ${a.title}, ${when}. Please check the CSHARE app.`,
       data: { assignmentId: a.id },
-      android: androidFor(changed ? false : callStyle),
+      // The first notice is intentionally call-style when that critical notification is enabled.
+      android: androidFor(callStyle),
     });
   }
 }
