@@ -36,6 +36,7 @@ export function makeUser(id: string, name: string, over: Partial<UserProfile> = 
     phone: '+15550100',
     role: 'user',
     active: true,
+    developer: false,
     secretary: false,
     qualifications: [],
     reportingType: 'publisher',
