@@ -58,26 +58,37 @@ function candidateLabel(minutes: number): string {
 }
 
 /**
- * Picks which candidate points to actually use, tiered by how much notice there is in total.
- * This keeps the schedule sensible (not one reminder, not fifteen) whether the assignment was
- * given out weeks ahead or minutes ahead. See CSHARE's Smart Reminder specification for the
- * worked examples this mirrors.
+ * Build the awareness schedule from the assignment's actual start time.
+ *
+ * The user's reminder settings do not choose these points. They only decide whether reminders
+ * are allowed and whether the important reminders may use the call-style notification.
+ *
+ * Long notice (6 days, for example): one gentle text reminder each day as the assignment gets
+ * closer, then a denser set on the assignment day. Short notice automatically skips points that
+ * have already passed.
  */
-function tierFor(noticeMinutes: number): number[] {
-  if (noticeMinutes > 7 * 1440) return [10080, 4320, 1440, 180, 60, 15];
-  if (noticeMinutes > 1440) return [4320, 1440, 720, 180, 60, 15];
-  if (noticeMinutes > 12 * 60) return [720, 180, 60, 15, 5];
-  if (noticeMinutes > 3 * 60) return [180, 60, 30, 15, 5];
-  if (noticeMinutes > 30) return [60, 30, 15, 5];
-  return [5]; // under 30 minutes' notice: one heads-up is plenty, not a flurry of alerts
+function awarenessOffsets(noticeMinutes: number): number[] {
+  const points: number[] = [];
+
+  // One daily awareness reminder for each remaining full day, but never the day of assignment.
+  if (noticeMinutes > 5 * 1440) points.push(5 * 1440, 4 * 1440, 3 * 1440, 2 * 1440, 1440);
+  else if (noticeMinutes > 4 * 1440) points.push(4 * 1440, 3 * 1440, 2 * 1440, 1440);
+  else if (noticeMinutes > 3 * 1440) points.push(3 * 1440, 2 * 1440, 1440);
+  else if (noticeMinutes > 2 * 1440) points.push(2 * 1440, 1440);
+  else if (noticeMinutes > 1440) points.push(1440);
+
+  // Assignment-day reminders. Each point is included only when there is still enough notice.
+  points.push(360, 60, 20, 10, 2, 0);
+  return points;
 }
 
 export interface PlannedReminder {
   id: string;
   assignmentId: string;
   fireAt: Date;
-  /** The last reminder before the assignment starts. Shown call-style if the person allows it. */
+  /** True for the final/start reminder; retained for compatibility with existing callers/tests. */
   isFinal: boolean;
+  /** Call-style is reserved for the initial assignment notice, approaching reminders, and start. */
   callStyle: boolean;
   title: string;
   body: string;
@@ -117,20 +128,29 @@ export function planReminders(
 
   const horizon = opts.now.getTime() + (opts.horizonDays ?? HORIZON_DAYS) * DAY;
   const noticeMinutes = (a.startAt.getTime() - opts.now.getTime()) / MINUTE;
-  const points = [...tierFor(noticeMinutes), 0]; // 0 = "starts now", always included
+  const points = awarenessOffsets(noticeMinutes);
 
   const planned: PlannedReminder[] = [];
-  points.forEach((offset, slot) => {
+  points.forEach(offset => {
     const fireAt = new Date(a.startAt.getTime() - offset * MINUTE);
-    if (fireAt.getTime() <= opts.now.getTime() + 5000) return; // already past — never schedule a candidate that's gone
-    if (fireAt.getTime() > horizon) return; // set later instead, once it's within the scheduling window
-    const isFinal = slot === points.length - 1;
-    const callStyle = isFinal && opts.callStyle;
+    if (fireAt.getTime() <= opts.now.getTime() + 5000) return;
+    if (fireAt.getTime() > horizon) return;
+
+    const isFinal = offset === 0;
+    // The start and 2-minute reminders are critical. For longer notice, the 1-day reminder is
+    // the "approaching" call-style reminder. If there is less than a day of notice, use the
+    // 1-hour point as the approaching call-style reminder instead.
+    const callStyleOffset = offset === 1440 || offset === 60 || offset === 2 || offset === 0;
+    const callStyle = opts.callStyle && callStyleOffset;
     const body =
       offset === 0
-        ? (callStyle ? `${a.title} starts now. Please check the CSHARE app.` : `${a.title} starts now.`)
+        ? `${a.title} starts now. Please check the CSHARE app.`
         : callStyle
-          ? `You have an assignment: ${a.title}. Please check the CSHARE app.`
+          ? offset === 1440
+            ? `Your assignment is tomorrow: ${a.title}. Please check the CSHARE app.`
+            : offset === 60
+              ? `Your assignment starts in 1 hour: ${a.title}. Please check the CSHARE app.`
+              : `Your assignment starts in ${offset} minutes: ${a.title}. Please check the CSHARE app.`
           : `${candidateLabel(offset)}: ${a.title} is ${whenPhrase(a, fireAt)}.`;
     planned.push({
       id: `cshare|${a.id}|${offset}|${fireAt.getTime()}|${callStyle ? 'c' : 'n'}|${hash(body)}`,
