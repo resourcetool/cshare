@@ -97,6 +97,25 @@ export function addServiceEntry(
   );
 }
 
+/** Save the single row for one calendar day. The date is the document id so a day is never duplicated by the new table UI. */
+export function saveDailyServiceEntry(
+  uid: string,
+  entry: { date: string; monthKey: string; hours: number; bibleStudies: number },
+): Promise<CommitResult> {
+  const ref = serviceEntries(uid).doc(entry.date);
+  return commit(
+    ref.set({
+      uid,
+      date: entry.date,
+      monthKey: entry.monthKey,
+      hours: entry.hours,
+      bibleStudies: entry.bibleStudies,
+      updatedAt: now(),
+      createdAt: now(),
+    }, { merge: true }),
+  );
+}
+
 export function updateServiceEntry(
   uid: string,
   entryId: string,
