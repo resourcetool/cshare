@@ -37,8 +37,6 @@ export interface UserProfile {
   phone: string;
   role: Role;
   active: boolean;
-  /** Only an administrator explicitly appointed as secretary may view all group reports. */
-  secretary: boolean;
   /** The privilege(s) this person holds: one or two of PrivilegeRole. Set by an administrator only. */
   qualifications: PrivilegeRole[];
   /** How this person reports field service each month. Set by an administrator only. */
@@ -248,6 +246,21 @@ export interface MonthlyReport {
 }
 
 export type MonthlyReportInput = Pick<MonthlyReport, 'reportingType' | 'participated' | 'hours' | 'bibleStudies'>;
+
+/** One field-service activity entered during the month by an auxiliary/regular pioneer. */
+export interface FieldServiceEntry {
+  id: string;
+  uid: string;
+  /** YYYY-MM-DD, local phone date. */
+  date: string;
+  /** YYYY-MM. */
+  monthKey: string;
+  hours: number;
+  bibleStudies: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 
 // ------------------------------------------------------------------ ministry groups
 
