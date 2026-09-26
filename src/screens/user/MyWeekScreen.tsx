@@ -34,34 +34,105 @@ export default function MyWeekScreen() {
     setWeekId(w => (w < thisWeek ? thisWeek : w));
   }, [thisWeek]);
 
-  const week = useLive<Week | null>((ok, err) => subscribeToWeek(weekId, ok, err), [weekId, reloadKey]);
+  const week = useLive<Week | null>(
+    (ok, err) => subscribeToWeek(weekId, ok, err),
+    [weekId, reloadKey],
+  );
+
   const items = myAssignments.filter(a => a.weekId === weekId);
   const sheet = view === 'mine' ? undefined : week.data?.sheets[view];
-  const meetingName = view === 'weekend' ? settings.weekendName : settings.midweekName;
+  const meetingName =
+    view === 'weekend'
+      ? settings.weekendName
+      : settings.midweekName;
+
+  /*
+   * Public Talk speaker names in the weekend program are visible only to:
+   * - Elders
+   * - Ministerial Servants
+   *
+   * Publishers, Baptized Publishers and other users will see "......".
+   *
+   * We use the existing qualifications array from the user's profile.
+   */
+  const canSeeWeekendPublicTalkName =
+    profile.qualifications.includes('elder') ||
+    profile.qualifications.includes('ministerial_servant');
 
   return (
     <Screen inTabs>
-      <WeekNav weekId={weekId} onChange={setWeekId} minWeekId={thisWeek} />
+      <WeekNav
+        weekId={weekId}
+        onChange={setWeekId}
+        minWeekId={thisWeek}
+      />
+
       <ChipRow>
-        <Chip label="📌 My parts" selected={view === 'mine'} onPress={() => setView('mine')} />
-        <Chip label={`📋 ${settings.midweekName}`} selected={view === 'midweek'} onPress={() => setView('midweek')} />
-        <Chip label={`📋 ${settings.weekendName}`} selected={view === 'weekend'} onPress={() => setView('weekend')} />
+        <Chip
+          label="📌 My parts"
+          selected={view === 'mine'}
+          onPress={() => setView('mine')}
+        />
+
+        <Chip
+          label={`📋 ${settings.midweekName}`}
+          selected={view === 'midweek'}
+          onPress={() => setView('midweek')}
+        />
+
+        <Chip
+          label={`📋 ${settings.weekendName}`}
+          selected={view === 'weekend'}
+          onPress={() => setView('weekend')}
+        />
       </ChipRow>
 
       {view === 'mine' ? (
         items.length === 0 ? (
-          <EmptyState title="Nothing for you this week" message="Parts given to you will show here." />
+          <EmptyState
+            title="Nothing for you this week"
+            message="Parts given to you will show here."
+          />
         ) : (
-          <WeekSheet assignments={items} categories={settings.categories} uid={profile.id} variant="user" onPress={a => nav.navigate('AssignmentDetail', { assignmentId: a.id })} />
+          <WeekSheet
+            assignments={items}
+            categories={settings.categories}
+            uid={profile.id}
+            variant="user"
+            onPress={a =>
+              nav.navigate('AssignmentDetail', {
+                assignmentId: a.id,
+              })
+            }
+          />
         )
       ) : sheet ? (
         <>
-          {sheet.title ? <Body style={{ marginBottom: 8, fontWeight: '700' }}>{sheet.title}</Body> : null}
-          <Body style={{ marginBottom: 12 }}>{formatDayLong(sheet.date)} · {formatTime(sheet.startTime)}</Body>
-          <ProgramSheet rows={sheet.program} uid={profile.id} minutesFormat={settings.minutesFormat} />
+          {sheet.title ? (
+            <Body style={{ marginBottom: 8, fontWeight: '700' }}>
+              {sheet.title}
+            </Body>
+          ) : null}
+
+          <Body style={{ marginBottom: 12 }}>
+            {formatDayLong(sheet.date)} · {formatTime(sheet.startTime)}
+          </Body>
+
+          <ProgramSheet
+            rows={sheet.program}
+            uid={profile.id}
+            minutesFormat={settings.minutesFormat}
+            maskWeekendPublicTalkNames={
+              view === 'weekend' &&
+              !canSeeWeekendPublicTalkName
+            }
+          />
         </>
       ) : (
-        <EmptyState title="Not ready yet" message={`The ${meetingName} for this week has not been published yet.`} />
+        <EmptyState
+          title="Not ready yet"
+          message={`The ${meetingName} for this week has not been published yet.`}
+        />
       )}
     </Screen>
   );
