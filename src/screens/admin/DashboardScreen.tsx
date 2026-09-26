@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
 import { MyAssignments } from '../../components/MyAssignments';
+import { AppUpdateNotice } from '../../components/AppUpdateNotice';
 import { AssignmentCard } from '../../components/AssignmentCard';
 import { Badge, Body, Button, Card, Heading, Label, Notice, Small, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
@@ -47,6 +48,8 @@ export default function DashboardScreen() {
         <Title style={{ flex: 1 }}>Hello, {firstName(profile.name)}</Title>
         <Button label="↻ Reload" variant="secondary" onPress={reload} style={{ minHeight: 48 }} />
       </View>
+
+      <AppUpdateNotice />
 
       {waiting.length ? (
         <Notice
