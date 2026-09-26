@@ -74,6 +74,7 @@ export default function MyReportScreen() {
       : (() => { ok([]); return () => {}; })(),
     [profile.id, currentMonthKey, needsHours],
   );
+
   const previousEntriesLive = useLive<FieldServiceEntry[]>(
     (ok, err) => needsHours
       ? subscribeToMyServiceEntries(profile.id, previousKey, ok, err)
@@ -150,19 +151,24 @@ export default function MyReportScreen() {
     const h = hours.trim() === '' ? (existing?.hours ?? 0) : Number(hours);
     const st = studies.trim() === '' ? (existing?.bibleStudies ?? 0) : Number(studies);
     const isFuture = activeMonthIsCurrent && dateKey > todayKey;
+
     if (isFuture) {
       setError('Future dates cannot be entered.');
       return;
     }
+
     if (!Number.isFinite(h) || h < 0 || h > 24) {
       setError('Enter hours from 0 to 24.');
       return;
     }
+
     if (!Number.isFinite(st) || st < 0 || st > 50) {
       setError('Enter Bible studies from 0 to 50.');
       return;
     }
+
     setBusy(true);
+
     try {
       const result = await saveDailyServiceEntry(profile.id, {
         date: dateKey,
@@ -170,8 +176,10 @@ export default function MyReportScreen() {
         hours: h,
         bibleStudies: st,
       });
+
       const wasQueued = result === 'queued';
       cancelEdit();
+
       if (wasQueued) setError('Saved on this phone. It will sync when you have internet.');
     } catch (e) {
       logError('save field service entry', e);
@@ -188,19 +196,52 @@ export default function MyReportScreen() {
       setError(`You can submit ${monthName} on the last day of the month.`);
       return;
     }
+
+    // Publishers and Baptized Publishers must enter Bible studies when
+    // they say they had a part in the ministry. Zero is a valid value.
+    if (!needsHours && participated) {
+      if (studies.trim() === '') {
+        setError('Enter the number of Bible studies before submitting.');
+        return;
+      }
+
+      const studyCount = Number(studies);
+
+      if (!Number.isInteger(studyCount) || studyCount < 0 || studyCount > 200) {
+        setError('Enter Bible studies from 0 to 200.');
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
+
     try {
       const result = await submitReport(
         profile.id,
         activeMonthKey,
         needsHours
-          ? { reportingType: type, hours: total.hours, bibleStudies: total.bibleStudies }
-          : { reportingType: type, participated },
-        { groupId: profile.groupId, reporterName: profile.name },
+          ? {
+              reportingType: type,
+              hours: total.hours,
+              bibleStudies: total.bibleStudies,
+            }
+          : {
+              reportingType: type,
+              participated,
+              ...(participated ? { bibleStudies: Number(studies) } : {}),
+            },
+        {
+          groupId: profile.groupId,
+          reporterName: profile.name,
+        },
       );
-      if (result === 'queued') setError('Saved on this phone. It will be sent when you have internet.');
-      else navigation.goBack();
+
+      if (result === 'queued') {
+        setError('Saved on this phone. It will be sent when you have internet.');
+      } else {
+        navigation.goBack();
+      }
     } catch (e) {
       logError('submit report', e);
       setError(friendlyError(e));
@@ -212,31 +253,73 @@ export default function MyReportScreen() {
   return (
     <Screen footer={<Button label="Submit monthly report" onPress={submit} loading={busy} disabled={busy || !canSubmit} />}>
       <Title>{monthName}</Title>
-      <Body style={{ marginBottom: space.md }}>Reporting as: {REPORTING_TYPE_LABELS[type]}</Body>
+
+      <Body style={{ marginBottom: space.md }}>
+        Reporting as: {REPORTING_TYPE_LABELS[type]}
+      </Body>
+
       {activeMonthIsCurrent && !canSubmit ? (
-        <Notice tone="info" message={`Keep recording your daily activity. Submission opens on ${formatMonthLong(currentMonthKey)}'s last day.`} />
+        <Notice
+          tone="info"
+          message={`Keep recording your daily activity. Submission opens on ${formatMonthLong(currentMonthKey)}'s last day.`}
+        />
       ) : null}
+
       {!activeMonthIsCurrent ? (
-        <Notice tone="warn" message="This previous month still has entries that have not been submitted. Submit it before a new month can be recorded." />
+        <Notice
+          tone="warn"
+          message="This previous month still has entries that have not been submitted. Submit it before a new month can be recorded."
+        />
       ) : null}
-      {error ? <Notice tone={error.startsWith('Saved') ? 'info' : 'bad'} message={error} /> : null}
+
+      {error ? (
+        <Notice
+          tone={error.startsWith('Saved') ? 'info' : 'bad'}
+          message={error}
+        />
+      ) : null}
 
       {needsHours ? (
         <>
           <Card style={{ marginBottom: space.lg }}>
             <Heading>Month total</Heading>
+
             <Body style={{ marginTop: space.xs }}>
               {total.hours} hour{total.hours === 1 ? '' : 's'} · {total.bibleStudies} Bible {total.bibleStudies === 1 ? 'study' : 'studies'}
             </Body>
-            {reference ? <Body style={{ marginTop: space.xs }}>Reference: {reference} hours. This is a minimum, not a maximum.</Body> : null}
+
+            {reference ? (
+              <Body style={{ marginTop: space.xs }}>
+                Reference: {reference} hours. This is a minimum, not a maximum.
+              </Body>
+            ) : null}
           </Card>
 
           <Card style={{ padding: 0, overflow: 'hidden', marginBottom: space.lg }}>
-            <View style={{ flexDirection: 'row', padding: space.md, backgroundColor: palette.surfaceAlt, borderBottomWidth: 1, borderBottomColor: palette.line }}>
-              <Text style={{ flex: 1.3, fontWeight: '700', color: palette.ink }}>Date</Text>
-              <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Hours</Text>
-              <Text style={{ flex: 0.8, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Studies</Text>
-              <Text style={{ width: 74, textAlign: 'right', fontWeight: '700', color: palette.ink }}>Action</Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                padding: space.md,
+                backgroundColor: palette.surfaceAlt,
+                borderBottomWidth: 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Text style={{ flex: 1.3, fontWeight: '700', color: palette.ink }}>
+                Date
+              </Text>
+
+              <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>
+                Hours
+              </Text>
+
+              <Text style={{ flex: 0.8, textAlign: 'center', fontWeight: '700', color: palette.ink }}>
+                Studies
+              </Text>
+
+              <Text style={{ width: 74, textAlign: 'right', fontWeight: '700', color: palette.ink }}>
+                Action
+              </Text>
             </View>
 
             {rows.map(dateKey => {
@@ -245,31 +328,137 @@ export default function MyReportScreen() {
               const isFuture = activeMonthIsCurrent && dateKey > todayKey;
               const isEditing = isToday || editingDate === dateKey;
               const canEdit = !isFuture;
+
               return (
-                <View key={dateKey} style={{ paddingHorizontal: space.md, paddingVertical: space.sm, borderBottomWidth: 1, borderBottomColor: palette.line, backgroundColor: isToday ? palette.primarySoft : 'transparent' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 54 }}>
+                <View
+                  key={dateKey}
+                  style={{
+                    paddingHorizontal: space.md,
+                    paddingVertical: space.sm,
+                    borderBottomWidth: 1,
+                    borderBottomColor: palette.line,
+                    backgroundColor: isToday ? palette.primarySoft : 'transparent',
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      minHeight: 54,
+                    }}
+                  >
                     <View style={{ flex: 1.25 }}>
-                      <Text style={{ fontWeight: isToday ? '800' : '500', color: isFuture ? palette.muted : palette.ink }}>{displayDay(dateKey)}</Text>
+                      <Text
+                        style={{
+                          fontWeight: isToday ? '800' : '500',
+                          color: isFuture ? palette.muted : palette.ink,
+                        }}
+                      >
+                        {displayDay(dateKey)}
+                      </Text>
+
                       {isToday ? <Badge label="TODAY" tone="info" /> : null}
                     </View>
+
                     <View style={{ flex: 0.8, alignItems: 'center' }}>
                       {isEditing ? (
-                        <TextInput value={hours} onChangeText={setHours} placeholder={entry ? String(entry.hours) : '0'} placeholderTextColor={palette.placeholder} keyboardType="decimal-pad" style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }} />
-                      ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.hours ?? '—'}</Text>}
+                        <TextInput
+                          value={hours}
+                          onChangeText={setHours}
+                          placeholder={entry ? String(entry.hours) : '0'}
+                          placeholderTextColor={palette.placeholder}
+                          keyboardType="decimal-pad"
+                          style={{
+                            width: 58,
+                            minHeight: 44,
+                            borderWidth: 1.5,
+                            borderColor: palette.primary,
+                            borderRadius: radius.md,
+                            textAlign: 'center',
+                            color: palette.ink,
+                            backgroundColor: palette.surface,
+                            fontSize: 16,
+                          }}
+                        />
+                      ) : (
+                        <Text
+                          style={{
+                            color: isFuture ? palette.muted : palette.ink,
+                            fontSize: 17,
+                          }}
+                        >
+                          {entry?.hours ?? '—'}
+                        </Text>
+                      )}
                     </View>
+
                     <View style={{ flex: 0.8, alignItems: 'center' }}>
                       {isEditing ? (
-                        <TextInput value={studies} onChangeText={setStudies} placeholder={entry ? String(entry.bibleStudies) : '0'} placeholderTextColor={palette.placeholder} keyboardType="number-pad" style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }} />
-                      ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.bibleStudies ?? '—'}</Text>}
+                        <TextInput
+                          value={studies}
+                          onChangeText={setStudies}
+                          placeholder={entry ? String(entry.bibleStudies) : '0'}
+                          placeholderTextColor={palette.placeholder}
+                          keyboardType="number-pad"
+                          style={{
+                            width: 58,
+                            minHeight: 44,
+                            borderWidth: 1.5,
+                            borderColor: palette.primary,
+                            borderRadius: radius.md,
+                            textAlign: 'center',
+                            color: palette.ink,
+                            backgroundColor: palette.surface,
+                            fontSize: 16,
+                          }}
+                        />
+                      ) : (
+                        <Text
+                          style={{
+                            color: isFuture ? palette.muted : palette.ink,
+                            fontSize: 17,
+                          }}
+                        >
+                          {entry?.bibleStudies ?? '—'}
+                        </Text>
+                      )}
                     </View>
+
                     <View style={{ width: 74, alignItems: 'flex-end' }}>
-                      {!isEditing && canEdit ? <Button label="Edit" variant="secondary" onPress={() => beginEdit(dateKey)} disabled={busy} /> : null}
+                      {!isEditing && canEdit ? (
+                        <Button
+                          label="Edit"
+                          variant="secondary"
+                          onPress={() => beginEdit(dateKey)}
+                          disabled={busy}
+                        />
+                      ) : null}
                     </View>
                   </View>
+
                   {isEditing && !isToday ? (
-                    <View style={{ flexDirection: 'row', marginTop: space.xs, paddingLeft: space.xs }}>
-                      <Button label="Save changes" onPress={() => saveEntry(dateKey)} loading={busy} disabled={busy} style={{ flex: 1, marginRight: space.xs }} />
-                      <Button label="Cancel" variant="secondary" onPress={cancelEdit} disabled={busy} style={{ flex: 1, marginLeft: space.xs }} />
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        marginTop: space.xs,
+                        paddingLeft: space.xs,
+                      }}
+                    >
+                      <Button
+                        label="Save changes"
+                        onPress={() => saveEntry(dateKey)}
+                        loading={busy}
+                        disabled={busy}
+                        style={{ flex: 1, marginRight: space.xs }}
+                      />
+
+                      <Button
+                        label="Cancel"
+                        variant="secondary"
+                        onPress={cancelEdit}
+                        disabled={busy}
+                        style={{ flex: 1, marginLeft: space.xs }}
+                      />
                     </View>
                   ) : null}
                 </View>
@@ -278,12 +467,56 @@ export default function MyReportScreen() {
           </Card>
 
           {activeMonthIsCurrent ? (
-            <Button label="Save today's entry" onPress={saveToday} loading={busy} disabled={busy} />
+            <Button
+              label="Save today's entry"
+              onPress={saveToday}
+              loading={busy}
+              disabled={busy}
+            />
           ) : null}
         </>
       ) : (
         <Card>
-          <SwitchRow label="I had a part in the ministry" value={participated} onValueChange={setParticipated} disabled={!canSubmit || busy} />
+          <SwitchRow
+            label="I had a part in the ministry"
+            value={participated}
+            onValueChange={(value) => {
+              setParticipated(value);
+              if (!value) setStudies('');
+            }}
+            disabled={!canSubmit || busy}
+          />
+
+          {participated ? (
+            <View style={{ marginTop: space.md }}>
+              <Body style={{ marginBottom: space.xs }}>
+                Bible studies
+              </Body>
+
+              <TextInput
+                value={studies}
+                onChangeText={setStudies}
+                placeholder="Enter number"
+                placeholderTextColor={palette.placeholder}
+                keyboardType="number-pad"
+                editable={!busy && canSubmit}
+                style={{
+                  minHeight: 48,
+                  borderWidth: 1.5,
+                  borderColor: palette.primary,
+                  borderRadius: radius.md,
+                  paddingHorizontal: space.md,
+                  color: palette.ink,
+                  backgroundColor: palette.surface,
+                  fontSize: 16,
+                }}
+              />
+
+              <Body style={{ marginTop: space.xs }}>
+                Enter 0 if you did not conduct any Bible studies.
+              </Body>
+            </View>
+          ) : null}
         </Card>
       )}
     </Screen>
