@@ -3,7 +3,7 @@ import { Alert, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import { Body, Button, Chip, ChipRow, Notice, Small, TextField, Title } from '../../components/ui';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { sendPasswordReset, signIn, signUp } from '../../services/authService';
+import { sendPasswordReset, signIn, signUp, validateSignupPassword } from '../../services/authService';
 import { useTheme } from '../../context/ThemeContext';
 import { space } from '../../theme';
 import { friendlyError, logError } from '../../utils/errors';
@@ -19,6 +19,10 @@ export default function AuthScreen() {
 
   const submit = async () => {
     if (!email.trim() || !password) return setError('Please enter your email and password.');
+    if (mode === 'signup') {
+      const policy = validateSignupPassword(password);
+      if (!policy.valid) return setError(policy.message ?? 'Please choose a stronger password.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -58,7 +62,7 @@ export default function AuthScreen() {
       {error ? <Notice tone="bad" message={error} /> : null}
 
       <TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-      <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} hint={mode === 'signup' ? 'At least 6 characters.' : undefined} />
+      <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} hint={mode === 'signup' ? '10+ characters, with uppercase, lowercase, number and special character.' : undefined} />
       <Button label={mode === 'signin' ? 'Sign in' : 'Create account'} onPress={submit} loading={busy} />
       {mode === 'signin' ? <Button label="Forgot password?" variant="ghost" onPress={forgot} style={{ marginTop: space.sm }} /> : null}
       <Small style={{ marginTop: space.lg }}>
