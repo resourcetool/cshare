@@ -17,7 +17,7 @@ function expectSanePlan(plan: ReturnType<typeof planReminders>, now: Date, start
   expect(last.isFinal).toBe(true);
   expect(last.fireAt.getTime()).toBe(startAt.getTime()); // the plan always ends with "starts now"
   expect(last.callStyle).toBe(callStyleAllowed);
-  expect(plan.slice(0, -1).every(p => !p.callStyle)).toBe(true); // only the last one is ever call-style
+  expect(plan.some(p => p.callStyle && p.fireAt.getTime() < startAt.getTime())).toBe(callStyleAllowed);
 }
 
 describe('Smart Reminder Engine', () => {
@@ -41,10 +41,12 @@ describe('Smart Reminder Engine', () => {
     expectSanePlan(plan, monday6pm, start, true);
     // the impossible-by-then 3-day and 7-day marks must never appear
     expect(plan.some(p => p.fireAt.getTime() < monday6pm.getTime())).toBe(false);
-    // useful close-in marks from the example are present
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '15:30').getTime())).toBe(true); // 3h before
+    // assignment-day marks are present
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '12:30').getTime())).toBe(true); // 6h before
     expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '17:30').getTime())).toBe(true); // 1h before
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:15').getTime())).toBe(true); // 15m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:10').getTime())).toBe(true); // 20m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:20').getTime())).toBe(true); // 10m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:28').getTime())).toBe(true); // 2m before
   });
 
   it('worked example: short-notice assignment still gets useful reminders (spec #17)', () => {
@@ -54,8 +56,9 @@ describe('Smart Reminder Engine', () => {
     const soonNow = combineDateTime('2026-10-06', '17:45');
     const plan = planReminders(a, 'u1', { now: soonNow, callStyle: true });
     expectSanePlan(plan, soonNow, start, true);
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:15').getTime())).toBe(true); // 15m before
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:25').getTime())).toBe(true); // 5m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:10').getTime())).toBe(true); // 20m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:20').getTime())).toBe(true); // 10m before
+    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:28').getTime())).toBe(true); // 2m before
   });
 
   it('never leaves someone with zero reminders, even with only a couple of minutes notice', () => {
@@ -65,6 +68,29 @@ describe('Smart Reminder Engine', () => {
     const plan = planReminders(a, 'u1', { now: lastMinute, callStyle: true });
     expectSanePlan(plan, lastMinute, start, true);
     expect(plan).toHaveLength(1); // just "starts now" — there is no room for anything else
+  });
+
+
+  it('gives daily awareness reminders for a six-day assignment, then increases near the start', () => {
+    const start = combineDateTime('2026-10-07', '19:00');
+    const sixDaysOut = combineDateTime('2026-10-01', '19:00');
+    const a = makeAssignment({ date: '2026-10-07', startTime: '19:00' });
+    const plan = planReminders(a, 'u1', { now: sixDaysOut, callStyle: true });
+
+    const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(offsets).toEqual([7200, 5760, 4320, 2880, 1440, 360, 60, 20, 10, 2, 0]);
+
+    const callOffsets = plan.filter(p => p.callStyle).map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(callOffsets).toEqual([1440, 60, 2, 0]);
+  });
+
+  it('uses the one-hour call-style reminder when there is less than one day of notice', () => {
+    const start = combineDateTime('2026-10-06', '18:30');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '18:30' });
+    const now18Hours = combineDateTime('2026-10-06', '00:30');
+    const plan = planReminders(a, 'u1', { now: now18Hours, callStyle: true });
+    const callOffsets = plan.filter(p => p.callStyle).map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(callOffsets).toEqual([60, 2, 0]);
   });
 
   it('plans nothing for cancelled, other people, or "cannot do"', () => {
