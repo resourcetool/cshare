@@ -95,6 +95,7 @@ export default function MyReportScreen() {
 
   const [hours, setHours] = useState('');
   const [studies, setStudies] = useState('');
+  const [editingDate, setEditingDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [participated, setParticipated] = useState(false);
@@ -120,40 +121,59 @@ export default function MyReportScreen() {
 
   const todayEntry = byDate[todayKey];
 
-  const saveToday = async () => {
+  const beginEdit = (dateKey: string) => {
+    const entry = byDate[dateKey];
+    setEditingDate(dateKey);
+    setHours(entry ? String(entry.hours) : '');
+    setStudies(entry ? String(entry.bibleStudies) : '');
     setError(null);
-    const h = hours.trim() === '' ? (todayEntry?.hours ?? 0) : Number(hours);
-    const s = studies.trim() === '' ? (todayEntry?.bibleStudies ?? 0) : Number(studies);
-    if (!activeMonthIsCurrent) {
-      setError('Finish and submit the previous month before entering a new month.');
+  };
+
+  const cancelEdit = () => {
+    setEditingDate(null);
+    setHours('');
+    setStudies('');
+    setError(null);
+  };
+
+  const saveEntry = async (dateKey: string) => {
+    setError(null);
+    const existing = byDate[dateKey];
+    const h = hours.trim() === '' ? (existing?.hours ?? 0) : Number(hours);
+    const st = studies.trim() === '' ? (existing?.bibleStudies ?? 0) : Number(studies);
+    const isFuture = activeMonthIsCurrent && dateKey > todayKey;
+    if (isFuture) {
+      setError('Future dates cannot be entered.');
       return;
     }
     if (!Number.isFinite(h) || h < 0 || h > 24) {
       setError('Enter hours from 0 to 24.');
       return;
     }
-    if (!Number.isFinite(s) || s < 0 || s > 50) {
+    if (!Number.isFinite(st) || st < 0 || st > 50) {
       setError('Enter Bible studies from 0 to 50.');
       return;
     }
     setBusy(true);
     try {
       const result = await saveDailyServiceEntry(profile.id, {
-        date: todayKey,
-        monthKey: currentMonthKey,
+        date: dateKey,
+        monthKey: activeMonthKey,
         hours: h,
-        bibleStudies: s,
+        bibleStudies: st,
       });
-      setHours('');
-      setStudies('');
-      if (result === 'queued') setError('Saved on this phone. It will sync when you have internet.');
+      const wasQueued = result === 'queued';
+      cancelEdit();
+      if (wasQueued) setError('Saved on this phone. It will sync when you have internet.');
     } catch (e) {
-      logError('save daily field service', e);
+      logError('save field service entry', e);
       setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
   };
+
+  const saveToday = () => saveEntry(todayKey);
 
   const submit = async () => {
     if (!canSubmit) {
@@ -207,30 +227,43 @@ export default function MyReportScreen() {
             <View style={{ flexDirection: 'row', padding: space.md, backgroundColor: palette.surfaceAlt, borderBottomWidth: 1, borderBottomColor: palette.line }}>
               <Text style={{ flex: 1.3, fontWeight: '700', color: palette.ink }}>Date</Text>
               <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Hours</Text>
-              <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Studies</Text>
+              <Text style={{ flex: 0.8, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Studies</Text>
+              <Text style={{ width: 74, textAlign: 'right', fontWeight: '700', color: palette.ink }}>Action</Text>
             </View>
 
             {rows.map(dateKey => {
               const entry = byDate[dateKey];
-              const isToday = dateKey === todayKey;
+              const isToday = dateKey === todayKey && activeMonthIsCurrent;
               const isFuture = activeMonthIsCurrent && dateKey > todayKey;
-              const editable = isToday && !isFuture && activeMonthIsCurrent;
+              const isEditing = isToday || editingDate === dateKey;
+              const canEdit = !isFuture;
               return (
-                <View key={dateKey} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 62, paddingHorizontal: space.md, borderBottomWidth: 1, borderBottomColor: palette.line, backgroundColor: isToday ? palette.primarySoft : 'transparent' }}>
-                  <View style={{ flex: 1.3 }}>
-                    <Text style={{ fontWeight: isToday ? '800' : '500', color: isFuture ? palette.muted : palette.ink }}>{displayDay(dateKey)}</Text>
-                    {isToday ? <Badge label="TODAY" tone="info" /> : null}
+                <View key={dateKey} style={{ paddingHorizontal: space.md, paddingVertical: space.sm, borderBottomWidth: 1, borderBottomColor: palette.line, backgroundColor: isToday ? palette.primarySoft : 'transparent' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 54 }}>
+                    <View style={{ flex: 1.25 }}>
+                      <Text style={{ fontWeight: isToday ? '800' : '500', color: isFuture ? palette.muted : palette.ink }}>{displayDay(dateKey)}</Text>
+                      {isToday ? <Badge label="TODAY" tone="info" /> : null}
+                    </View>
+                    <View style={{ flex: 0.8, alignItems: 'center' }}>
+                      {isEditing ? (
+                        <TextInput value={hours} onChangeText={setHours} placeholder={entry ? String(entry.hours) : '0'} placeholderTextColor={palette.placeholder} keyboardType="decimal-pad" style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }} />
+                      ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.hours ?? '—'}</Text>}
+                    </View>
+                    <View style={{ flex: 0.8, alignItems: 'center' }}>
+                      {isEditing ? (
+                        <TextInput value={studies} onChangeText={setStudies} placeholder={entry ? String(entry.bibleStudies) : '0'} placeholderTextColor={palette.placeholder} keyboardType="number-pad" style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }} />
+                      ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.bibleStudies ?? '—'}</Text>}
+                    </View>
+                    <View style={{ width: 74, alignItems: 'flex-end' }}>
+                      {!isEditing && canEdit ? <Button label="Edit" variant="secondary" onPress={() => beginEdit(dateKey)} disabled={busy} /> : null}
+                    </View>
                   </View>
-                  <View style={{ flex: 1, alignItems: 'center' }}>
-                    {editable ? (
-                      <TextInput value={hours} onChangeText={setHours} placeholder={entry ? String(entry.hours) : '0'} placeholderTextColor={palette.placeholder} keyboardType="decimal-pad" style={{ width: 64, minHeight: 46, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 17 }} />
-                    ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.hours ?? '—'}</Text>}
-                  </View>
-                  <View style={{ flex: 1, alignItems: 'center' }}>
-                    {editable ? (
-                      <TextInput value={studies} onChangeText={setStudies} placeholder={entry ? String(entry.bibleStudies) : '0'} placeholderTextColor={palette.placeholder} keyboardType="number-pad" style={{ width: 64, minHeight: 46, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 17 }} />
-                    ) : <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.bibleStudies ?? '—'}</Text>}
-                  </View>
+                  {isEditing && !isToday ? (
+                    <View style={{ flexDirection: 'row', marginTop: space.xs, paddingLeft: space.xs }}>
+                      <Button label="Save changes" onPress={() => saveEntry(dateKey)} loading={busy} disabled={busy} style={{ flex: 1, marginRight: space.xs }} />
+                      <Button label="Cancel" variant="secondary" onPress={cancelEdit} disabled={busy} style={{ flex: 1, marginLeft: space.xs }} />
+                    </View>
+                  ) : null}
                 </View>
               );
             })}
