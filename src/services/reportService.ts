@@ -1,12 +1,14 @@
 import firestore, { FirebaseFirestoreTypes as FT } from '@react-native-firebase/firestore';
-import { MonthlyReport, MonthlyReportInput } from '../types';
+import { FieldServiceEntry, MonthlyReport, MonthlyReportInput } from '../types';
 import { toDate } from '../utils/dates';
 import { commit, CommitResult } from './commit';
 
 const reports = () => firestore().collection('reports');
+const serviceEntries = (uid: string) =>
+  firestore().collection('serviceEntries').doc(uid).collection('entries');
 const now = () => firestore.FieldValue.serverTimestamp();
 
-/** Doc id is always this — one document can ever exist for a given person/month. */
+/** Doc id is always this — one monthly report can exist for a given person/month. */
 export function reportId(uid: string, monthKey: string): string {
   return `${uid}_${monthKey}`;
 }
@@ -28,6 +30,19 @@ function mapReport(id: string, d: FT.DocumentData): MonthlyReport {
   };
 }
 
+function mapServiceEntry(id: string, d: FT.DocumentData): FieldServiceEntry {
+  return {
+    id,
+    uid: d.uid ?? '',
+    date: d.date ?? '',
+    monthKey: d.monthKey ?? '',
+    hours: typeof d.hours === 'number' ? d.hours : 0,
+    bibleStudies: typeof d.bibleStudies === 'number' ? d.bibleStudies : 0,
+    createdAt: toDate(d.createdAt),
+    updatedAt: toDate(d.updatedAt),
+  };
+}
+
 /** This person's report for one month, or null if they haven't submitted it yet. */
 export function subscribeToMyReport(
   uid: string,
@@ -37,10 +52,75 @@ export function subscribeToMyReport(
 ): () => void {
   return reports()
     .doc(reportId(uid, monthKey))
-    .onSnapshot(snap => onData(snap.exists && snap.data() ? mapReport(snap.id, snap.data() as FT.DocumentData) : null), onError);
+    .onSnapshot(
+      snap => onData(snap.exists && snap.data() ? mapReport(snap.id, snap.data() as FT.DocumentData) : null),
+      onError,
+    );
 }
 
-/** One-shot read (used by the background sync, to decide whether a report reminder is still due). */
+/** Live daily field-service entries for the signed-in pioneer for one month. */
+export function subscribeToMyServiceEntries(
+  uid: string,
+  monthKey: string,
+  onData: (entries: FieldServiceEntry[]) => void,
+  onError: (e: unknown) => void,
+): () => void {
+  return serviceEntries(uid)
+    .where('monthKey', '==', monthKey)
+    .onSnapshot(
+      snap => {
+        const list = snap.docs
+          .map(d => mapServiceEntry(d.id, d.data() as FT.DocumentData))
+          .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+        onData(list);
+      },
+      onError,
+    );
+}
+
+/** Add one field-service visit. Only auxiliary/regular pioneers can create these; Firestore enforces that. */
+export function addServiceEntry(
+  uid: string,
+  entry: { date: string; monthKey: string; hours: number; bibleStudies: number },
+): Promise<CommitResult> {
+  const ref = serviceEntries(uid).doc();
+  return commit(
+    ref.set({
+      uid,
+      date: entry.date,
+      monthKey: entry.monthKey,
+      hours: entry.hours,
+      bibleStudies: entry.bibleStudies,
+      createdAt: now(),
+      updatedAt: now(),
+    }),
+  );
+}
+
+export function updateServiceEntry(
+  uid: string,
+  entryId: string,
+  patch: { date: string; monthKey: string; hours: number; bibleStudies: number },
+): Promise<CommitResult> {
+  return commit(
+    serviceEntries(uid).doc(entryId).update({
+      date: patch.date,
+      monthKey: patch.monthKey,
+      hours: patch.hours,
+      bibleStudies: patch.bibleStudies,
+      updatedAt: now(),
+    }),
+  );
+}
+
+export function deleteServiceEntry(
+  uid: string,
+  entryId: string,
+): Promise<CommitResult> {
+  return commit(serviceEntries(uid).doc(entryId).delete());
+}
+
+/** One-shot read used by background sync to decide whether a report reminder is still due. */
 export async function getMyReport(uid: string, monthKey: string): Promise<MonthlyReport | null> {
   const snap = await reports().doc(reportId(uid, monthKey)).get();
   const data = snap.data();
@@ -48,13 +128,9 @@ export async function getMyReport(uid: string, monthKey: string): Promise<Monthl
 }
 
 /**
- * Submits a report for the given month. The doc id (`${uid}_${monthKey}`) means there can only
- * ever be one. This calls plain `.set()`, but Firestore evaluates a `.set()` against the
- * security rules' `create` rule ONLY while the document doesn't exist yet — the moment it does,
- * the very same call is evaluated as an `update`, which the rules only allow an administrator to
- * do. So a second accidental submission for the same month is rejected by the server outright,
- * not just discouraged by the UI. If a correction is genuinely needed, an administrator can
- * update it.
+ * Submits the final monthly report. For pioneers, the totals shown by the app come from the
+ * daily entries. A normal user cannot overwrite a submitted report; only an administrator can
+ * correct an existing report.
  */
 export function submitReport(
   uid: string,
@@ -81,10 +157,7 @@ export function submitReport(
   );
 }
 
-
-/** Live reports belonging to one ministry group. The security rules only permit an administrator
- * or that group's overseer to read this query. Filtering by groupId alone avoids requiring a
- * composite Firestore index; the current month is filtered locally. */
+/** Live reports belonging to one ministry group. */
 export function subscribeToGroupReports(
   groupId: string,
   monthKey: string,
