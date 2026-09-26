@@ -6,7 +6,7 @@ import { Badge, Body, Button, Card, Heading, LoadingView, Notice, SwitchRow, Tit
 import { useAppData } from '../../context/AppDataContext';
 import { saveDailyServiceEntry, subscribeToMyServiceEntries, subscribeToMyReport, submitReport } from '../../services/reportService';
 import { space, radius } from '../../theme';
-import { formatMonthLong, lastDayOfMonth, monthKeyFor, previousMonthKey, toDateKey } from '../../utils/dates';
+import { formatMonthLong, lastDayOfMonth, previousMonthKey, toDateKey } from '../../utils/dates';
 import { friendlyError, logError } from '../../utils/errors';
 import { hourReferenceFor, REPORTING_TYPE_LABELS, reportsHours, summarizeReport } from '../../utils/reports';
 import { FieldServiceEntry, MonthlyReport } from '../../types';
