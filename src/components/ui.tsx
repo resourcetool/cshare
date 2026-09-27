@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardTypeOptions,
@@ -169,7 +169,7 @@ export function EmptyState({ title, message, actionLabel, onAction }: {
 
 // ------------------------------------------------------------------ Form controls
 export function TextField({
-  label, value, onChangeText, placeholder, multiline, keyboardType, secureTextEntry, autoCapitalize, error, editable = true, maxLength, hint, autoComplete,
+  label, value, onChangeText, placeholder, multiline, keyboardType, secureTextEntry, showPasswordToggle = false, autoCapitalize, error, editable = true, maxLength, hint, autoComplete,
 }: {
   label: string;
   value: string;
@@ -178,6 +178,7 @@ export function TextField({
   multiline?: boolean;
   keyboardType?: KeyboardTypeOptions;
   secureTextEntry?: boolean;
+  showPasswordToggle?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   error?: string | null;
   editable?: boolean;
@@ -186,24 +187,38 @@ export function TextField({
   autoComplete?: 'email' | 'password' | 'name' | 'tel' | 'off' | 'new-password' | 'current-password';
 }) {
   const { s, palette } = useStyles();
+  const [visible, setVisible] = useState(false);
+  const hidePassword = secureTextEntry === true && !visible;
   return (
     <View style={{ marginBottom: space.lg }}>
       <Label style={{ marginBottom: space.xs }}>{label}</Label>
-      <TextInput
-        accessibilityLabel={label}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={palette.placeholder}
-        multiline={multiline}
-        keyboardType={keyboardType}
-        secureTextEntry={secureTextEntry}
-        autoCapitalize={autoCapitalize}
-        autoComplete={autoComplete}
-        editable={editable}
-        maxLength={maxLength}
-        style={[s.input, multiline && { minHeight: 110, textAlignVertical: 'top' }, !editable && { backgroundColor: palette.surfaceAlt }, error ? { borderColor: palette.bad } : null]}
-      />
+      <View>
+        <TextInput
+          accessibilityLabel={label}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={palette.placeholder}
+          multiline={multiline}
+          keyboardType={keyboardType}
+          secureTextEntry={hidePassword}
+          autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
+          editable={editable}
+          maxLength={maxLength}
+          style={[s.input, showPasswordToggle && { paddingRight: 54 }, multiline && { minHeight: 110, textAlignVertical: 'top' }, !editable && { backgroundColor: palette.surfaceAlt }, error ? { borderColor: palette.bad } : null]}
+        />
+        {showPasswordToggle && secureTextEntry ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+            onPress={() => setVisible(v => !v)}
+            style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 20, color: palette.muted }}>{'👁'}</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {hint && !error ? <Small style={{ marginTop: space.xs }}>{hint}</Small> : null}
       {error ? <Small style={{ color: palette.bad, marginTop: space.xs }}>{error}</Small> : null}
     </View>
