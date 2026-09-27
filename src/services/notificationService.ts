@@ -10,694 +10,279 @@ import notifee, {
 } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import { Assignment } from '../types';
+import { logError } from '../utils/errors';
 import { planReminders } from '../utils/reminders';
 import { addFcmToken, removeFcmToken } from './userService';
 
-export const CHANNEL_REMINDER = 'cshare_reminders_v3';
-export const CHANNEL_CALL = 'cshare_call_v2';
+export const CHANNEL_REMINDER = 'cshare_reminders_v2'; // v2: switched off the device's default sound
+export const CHANNEL_CALL = 'cshare_call_v1'; // change the id if the sound/vibration ever changes
+export const CALL_ACTIVITY = 'com.cshare.CallActivity';
+const SCHEDULED_PREFIX = 'cshare|';
+const TEST_PREFIX = 'cshare-test|';
+const SMALL_ICON = 'ic_notification';
 
-export const CALL_ACTIVITY =
-  'com.cshare.CallActivity';
-
-const SCHEDULED_PREFIX =
-  'cshare|';
-
-const TEST_PREFIX =
-  'cshare-test|';
-
-const SMALL_ICON =
-  'ic_notification';
-
-/*
- * IMPORTANT
- *
- * Put your custom sound file here:
- *
- * android/app/src/main/res/raw/cshare_ring.wav
- *
- * Android resource names must:
- * - use lowercase letters
- * - contain no spaces
- * - contain no brackets
- * - contain no special characters
- *
- * The notification sound name below therefore stays:
- *
- * cshare_ring
- */
-
-// ------------------------------------------------------------------
-// CHANNELS & PERMISSIONS
-// ------------------------------------------------------------------
+// ------------------------------------------------------------------ setup & permissions
 
 export async function ensureChannels(): Promise<void> {
-  /*
-   * Main CSHARE reminder channel.
-   *
-   * Every normal CSHARE reminder uses:
-   *
-   * cshare_ring.wav
-   */
+  // Every CSHARE alarm/reminder uses this ringtone, never the device's own notification or
+  // alarm sound, so an assignment reminder is always unmistakably a CSHARE reminder.
   await notifee.createChannel({
     id: CHANNEL_REMINDER,
-    name: 'CSHARE Reminders',
-    description:
-      'Notifications and reminders from CSHARE.',
-    importance:
-      AndroidImportance.HIGH,
+    name: 'Assignment reminders',
+    importance: AndroidImportance.HIGH,
     vibration: true,
-    vibrationPattern: [
-      300,
-      500,
-      300,
-      500,
-    ],
-    sound: 'cshare_ring',
+    sound: 'cshare_ring', // android/app/src/main/res/raw/cshare_ring.wav
   });
-
-  /*
-   * Final/call-style reminder channel.
-   *
-   * It deliberately uses the SAME
-   * CSHARE sound so that users recognize
-   * every CSHARE reminder immediately.
-   */
   await notifee.createChannel({
     id: CHANNEL_CALL,
-    name: 'CSHARE Final Reminders',
-    description:
-      'Important CSHARE reminders shortly before an assignment.',
-    importance:
-      AndroidImportance.HIGH,
+    name: 'Final reminder (call-style)',
+    description: 'A louder, more noticeable reminder shortly before an assignment.',
+    importance: AndroidImportance.HIGH,
     vibration: true,
-    vibrationPattern: [
-      300,
-      700,
-      300,
-      700,
-      300,
-      700,
-    ],
-    sound: 'cshare_ring',
+    vibrationPattern: [300, 700, 300, 700, 300, 700],
+    sound: 'cshare_ring', // android/app/src/main/res/raw/cshare_ring.wav
   });
 }
 
 export interface ReminderCapability {
   notifications: boolean;
+  /** Android 12+ needs "Alarms & reminders" to be allowed for on-time delivery. */
   exactAlarms: boolean;
 }
 
 export async function getReminderCapability(): Promise<ReminderCapability> {
-  const settings =
-    await notifee.getNotificationSettings();
-
+  const s = await notifee.getNotificationSettings();
   return {
     notifications:
-      settings.authorizationStatus ===
-        AuthorizationStatus.AUTHORIZED ||
-      settings.authorizationStatus ===
-        AuthorizationStatus.PROVISIONAL,
-
-    exactAlarms:
-      settings.android.alarm !==
-      AndroidNotificationSetting.DISABLED,
+      s.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
+      s.authorizationStatus === AuthorizationStatus.PROVISIONAL,
+    exactAlarms: s.android.alarm !== AndroidNotificationSetting.DISABLED,
   };
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  const settings =
-    await notifee.requestPermission();
-
+  const s = await notifee.requestPermission();
   return (
-    settings.authorizationStatus ===
-      AuthorizationStatus.AUTHORIZED ||
-    settings.authorizationStatus ===
-      AuthorizationStatus.PROVISIONAL
+    s.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
+    s.authorizationStatus === AuthorizationStatus.PROVISIONAL
   );
 }
 
-export const openNotificationSettings =
-  () =>
-    notifee.openNotificationSettings();
+export const openNotificationSettings = () => notifee.openNotificationSettings();
+export const openExactAlarmSettings = () => notifee.openAlarmPermissionSettings();
 
-export const openExactAlarmSettings =
-  () =>
-    notifee.openAlarmPermissionSettings();
+// ------------------------------------------------------------------ local reminders
 
-// ------------------------------------------------------------------
-// EXACT ANDROID TRIGGER
-// ------------------------------------------------------------------
-
-function trigger(
-  at: Date,
-): TimestampTrigger {
+function trigger(at: Date): TimestampTrigger {
   return {
     type: TriggerType.TIMESTAMP,
-
     timestamp: at.getTime(),
-
-    alarmManager: {
-      type:
-        AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
-    },
+    alarmManager: { type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE },
   };
 }
 
-// ------------------------------------------------------------------
-// ANDROID NOTIFICATION CONFIGURATION
-// ------------------------------------------------------------------
-
-export function androidFor(
-  callStyle: boolean,
-) {
+export function androidFor(callStyle: boolean) {
   if (!callStyle) {
     return {
-      channelId:
-        CHANNEL_REMINDER,
-
-      importance:
-        AndroidImportance.HIGH,
-
-      category:
-        AndroidCategory.REMINDER,
-
-      smallIcon:
-        SMALL_ICON,
-
-      color:
-        '#0E5A66',
-
-      vibrationPattern: [
-        300,
-        500,
-        300,
-        500,
-      ],
-
-      pressAction: {
-        id: 'default',
-      },
+      channelId: CHANNEL_REMINDER,
+      importance: AndroidImportance.HIGH,
+      category: AndroidCategory.REMINDER,
+      smallIcon: SMALL_ICON,
+      color: '#0E5A66',
+      pressAction: { id: 'default' },
     };
   }
-
-  /*
-   * Final reminder.
-   *
-   * Same CSHARE sound, but more noticeable.
-   */
+  // Call-style: high priority + full-screen intent. If Android does not allow a full-screen
+  // intent for this app (e.g. Android 14+ permission not granted, or the phone is in use)
+  // it automatically shows the same notification as a heads-up alert with sound/vibration.
   return {
-    channelId:
-      CHANNEL_CALL,
-
-    importance:
-      AndroidImportance.HIGH,
-
-    category:
-      AndroidCategory.CALL,
-
-    smallIcon:
-      SMALL_ICON,
-
-    color:
-      '#0E5A66',
-
-    vibrationPattern: [
-      300,
-      700,
-      300,
-      700,
-      300,
-      700,
-    ],
-
-    autoCancel:
-      true,
-
-    timeoutAfter:
-      120000,
-
-    pressAction: {
-      id: 'call',
-      launchActivity:
-        CALL_ACTIVITY,
-    },
-
-    fullScreenAction: {
-      id: 'call',
-      launchActivity:
-        CALL_ACTIVITY,
-    },
+    channelId: CHANNEL_CALL,
+    importance: AndroidImportance.HIGH,
+    category: AndroidCategory.CALL,
+    smallIcon: SMALL_ICON,
+    color: '#0E5A66',
+    autoCancel: true,
+    timeoutAfter: 120000,
+    pressAction: { id: 'call', launchActivity: CALL_ACTIVITY },
+    fullScreenAction: { id: 'call', launchActivity: CALL_ACTIVITY },
   };
 }
-
-// ------------------------------------------------------------------
-// ASSIGNMENT REMINDERS
-// ------------------------------------------------------------------
 
 export interface SyncResult {
   scheduled: number;
-  blocked?:
-    'notifications';
+  blocked?: 'notifications';
 }
 
+/**
+ * Makes the reminders scheduled on this phone match the assignments Firestore last delivered.
+ * Called every time assignments change (including when the phone reconnects and Firestore
+ * catches up), so edits/cancellations made while the phone was offline replace old reminders.
+ * Safe to call repeatedly — running it 1, 5 or 20 times in a row never creates a duplicate,
+ * because each planned reminder's id is entirely derived from the assignment, so an unchanged
+ * reminder always recomputes to the same id and is left alone (see planReminders / reminders.ts).
+ *
+ * "Assignment received" itself (Event 1) is a separate, one-shot notification handled by
+ * announceNew() in backgroundSync.ts — this function only owns the scheduled Smart Reminders
+ * (Events 2 and 3).
+ */
 export async function syncLocalReminders(
   assignments: Assignment[],
   uid: string,
-  opts: {
-    remindersEnabled: boolean;
-    callStyle: boolean;
-  },
+  opts: { remindersEnabled: boolean; callStyle: boolean },
 ): Promise<SyncResult> {
-  /*
-   * Make sure the CSHARE channels exist
-   * before scheduling anything.
-   */
-  await ensureChannels();
+  const cap = await getReminderCapability();
+  if (!cap.notifications) return { scheduled: 0, blocked: 'notifications' };
 
-  const capability =
-    await getReminderCapability();
+  const planned = opts.remindersEnabled
+    ? assignments.flatMap(a => planReminders(a, uid, { now: new Date(), callStyle: opts.callStyle }))
+    : [];
+  const wanted = new Set(planned.map(p => p.id));
 
-  if (!capability.notifications) {
-    return {
-      scheduled: 0,
-      blocked:
-        'notifications',
-    };
-  }
+  const existing = (await notifee.getTriggerNotificationIds()).filter(id => id.startsWith(SCHEDULED_PREFIX));
+  const stale = existing.filter(id => !wanted.has(id));
+  if (stale.length) await notifee.cancelTriggerNotifications(stale);
 
-  /*
-   * Build the complete list of reminders
-   * that SHOULD exist.
-   */
-  const planned =
-    opts.remindersEnabled
-      ? assignments.flatMap(
-          assignment =>
-            planReminders(
-              assignment,
-              uid,
-              {
-                now:
-                  new Date(),
-
-                callStyle:
-                  opts.callStyle,
-              },
-            ),
-        )
-      : [];
-
-  const wanted =
-    new Set(
-      planned.map(
-        reminder =>
-          reminder.id,
-      ),
-    );
-
-  /*
-   * Get reminders currently registered
-   * with Android.
-   */
-  const existing =
-    (
-      await notifee
-        .getTriggerNotificationIds()
-    ).filter(
-      id =>
-        id.startsWith(
-          SCHEDULED_PREFIX,
-        ),
-    );
-
-  /*
-   * Remove reminders that no longer
-   * correspond to a valid assignment.
-   */
-  const stale =
-    existing.filter(
-      id =>
-        !wanted.has(id),
-    );
-
-  if (stale.length > 0) {
-    await notifee
-      .cancelTriggerNotifications(
-        stale,
-      );
-  }
-
-  const have =
-    new Set(existing);
-
+  const have = new Set(existing);
   let scheduled = 0;
-
-  /*
-   * Schedule every required reminder.
-   *
-   * Android owns the actual alarm after
-   * this point. CSHARE does NOT have to
-   * remain open.
-   */
-  for (
-    const reminder of planned
-  ) {
-    if (
-      have.has(
-        reminder.id,
-      )
-    ) {
+  for (const p of planned) {
+    if (have.has(p.id)) {
       scheduled++;
       continue;
     }
-
-    await notifee
-      .createTriggerNotification(
-        {
-          id:
-            reminder.id,
-
-          title:
-            reminder.title,
-
-          body:
-            reminder.body,
-
-          data: {
-            assignmentId:
-              reminder.assignmentId,
-          },
-
-          android:
-            androidFor(
-              reminder.callStyle,
-            ),
-        },
-
-        trigger(
-          reminder.fireAt,
-        ),
-      );
-
+    await notifee.createTriggerNotification(
+      { id: p.id, title: p.title, body: p.body, data: { assignmentId: p.assignmentId }, android: androidFor(p.callStyle) },
+      trigger(p.fireAt),
+    );
     scheduled++;
   }
-
-  return {
-    scheduled,
-  };
+  return { scheduled };
 }
-
-// ------------------------------------------------------------------
-// CANCEL ASSIGNMENT REMINDERS
-// ------------------------------------------------------------------
 
 export async function cancelAllLocalReminders(): Promise<void> {
-  const ids =
-    (
-      await notifee
-        .getTriggerNotificationIds()
-    ).filter(
-      id =>
-        id.startsWith(
-          SCHEDULED_PREFIX,
-        ),
-    );
-
-  if (ids.length > 0) {
-    await notifee
-      .cancelTriggerNotifications(
-        ids,
-      );
-  }
+  const ids = (await notifee.getTriggerNotificationIds()).filter(id => id.startsWith(SCHEDULED_PREFIX));
+  if (ids.length) await notifee.cancelTriggerNotifications(ids);
 }
 
-// ------------------------------------------------------------------
-// MONTHLY FIELD SERVICE REPORT REMINDERS
-// ------------------------------------------------------------------
+// ------------------------------------------------------------------ "time to send your report"
 
-const REPORT_PREFIX =
-  'cshare-report|';
+const REPORT_PREFIX = 'cshare-report|';
 
+/**
+ * Keeps this phone's "time to send your report" reminders in step: scheduled the same way as
+ * assignment reminders (an Android exact alarm, so it still rings if the app is closed), loud
+ * the same way a new assignment is, and automatically cancelled the moment the report for that
+ * month has actually been submitted — never a leftover reminder to submit something already done.
+ */
 export async function syncReportReminder(
   dates: Date[],
   monthKey: string,
   alreadySubmitted: boolean,
-  opts: {
-    remindersEnabled: boolean;
-    callStyle: boolean;
-  },
+  opts: { remindersEnabled: boolean; callStyle: boolean },
 ): Promise<void> {
-  /*
-   * Make sure report reminders also
-   * use the CSHARE sound.
-   */
-  await ensureChannels();
+  const cap = await getReminderCapability();
+  if (!cap.notifications) return;
 
-  const capability =
-    await getReminderCapability();
-
-  if (!capability.notifications) {
-    return;
-  }
-
-  const wanted =
-    opts.remindersEnabled &&
-    !alreadySubmitted
-      ? dates
-      : [];
-
-  const existing =
-    (
-      await notifee
-        .getTriggerNotificationIds()
-    ).filter(
-      id =>
-        id.startsWith(
-          REPORT_PREFIX,
-        ),
-    );
-
-  /*
-   * Remove reminders belonging to
-   * previous months.
-   */
-  const stale =
-    existing.filter(
-      id =>
-        !id.startsWith(
-          `${REPORT_PREFIX}${monthKey}|`,
-        ),
-    );
-
-  if (stale.length > 0) {
-    await notifee
-      .cancelTriggerNotifications(
-        stale,
-      );
-  }
-
-  /*
-   * If report is already submitted,
-   * remove this month's reminders.
-   */
+  const wanted = opts.remindersEnabled && !alreadySubmitted ? dates : [];
+  const existing = (await notifee.getTriggerNotificationIds()).filter(id => id.startsWith(REPORT_PREFIX));
+  const stale = existing.filter(id => !id.startsWith(`${REPORT_PREFIX}${monthKey}|`));
+  if (stale.length) await notifee.cancelTriggerNotifications(stale);
   if (!wanted.length) {
-    const thisMonth =
-      existing.filter(
-        id =>
-          id.startsWith(
-            `${REPORT_PREFIX}${monthKey}|`,
-          ),
-      );
-
-    if (thisMonth.length > 0) {
-      await notifee
-        .cancelTriggerNotifications(
-          thisMonth,
-        );
-    }
-
+    const thisMonth = existing.filter(id => id.startsWith(`${REPORT_PREFIX}${monthKey}|`));
+    if (thisMonth.length) await notifee.cancelTriggerNotifications(thisMonth);
     return;
   }
 
-  const have =
-    new Set(existing);
-
-  for (
-    const [
-      index,
-      at,
-    ] of wanted.entries()
-  ) {
-    const id =
-      `${REPORT_PREFIX}${monthKey}|${at.getTime()}`;
-
-    if (have.has(id)) {
-      continue;
-    }
-
-    const isFinal =
-      index ===
-      wanted.length - 1;
-
-    const callStyle =
-      isFinal &&
-      opts.callStyle;
-
-    await notifee
-      .createTriggerNotification(
-        {
-          id,
-
-          title:
-            'CSHARE',
-
-          body:
-            callStyle
-              ? "Your monthly report hasn't been sent yet. Please check the CSHARE app."
-              : 'Reminder: send your monthly field service report before the month ends.',
-
-          android:
-            androidFor(
-              callStyle,
-            ),
-        },
-
-        trigger(at),
-      );
+  const have = new Set(existing);
+  for (const [i, at] of wanted.entries()) {
+    const id = `${REPORT_PREFIX}${monthKey}|${at.getTime()}`;
+    if (have.has(id)) continue;
+    const isFinal = i === wanted.length - 1;
+    const callStyle = isFinal && opts.callStyle;
+    await notifee.createTriggerNotification(
+      {
+        id,
+        title: 'CSHARE',
+        body: callStyle
+          ? "Your monthly report hasn't been sent yet. Please check the CSHARE app."
+          : "Reminder: send your monthly field service report before the month ends.",
+        android: androidFor(callStyle),
+      },
+      trigger(at),
+    );
   }
 }
 
-// ------------------------------------------------------------------
-// TEST REMINDER
-// ------------------------------------------------------------------
-
-export async function scheduleTestReminder(
-  callStyle: boolean,
-  seconds = 8,
-): Promise<void> {
+/** For the "Send a test reminder" buttons in Settings. */
+export async function scheduleTestReminder(callStyle: boolean, seconds = 8): Promise<void> {
   await ensureChannels();
-
-  await notifee
-    .createTriggerNotification(
-      {
-        id:
-          `${TEST_PREFIX}${Date.now()}`,
-
-        title:
-          'CSHARE',
-
-        body:
-          callStyle
-            ? 'This is a test. You have an assignment. Please check the CSHARE app.'
-            : 'This is a CSHARE test reminder.',
-
-        android:
-          androidFor(
-            callStyle,
-          ),
-      },
-
-      trigger(
-        new Date(
-          Date.now() +
-            seconds * 1000,
-        ),
-      ),
-    );
-}
-
-// ------------------------------------------------------------------
-// NOTIFICATION PRESS
-// ------------------------------------------------------------------
-
-export function listenForNotificationPress(
-  onOpen: (
-    assignmentId: string,
-  ) => void,
-
-  onGroupOpen?: (
-    groupId: string,
-  ) => void,
-): () => void {
-  return notifee.onForegroundEvent(
-    ({
-      type,
-      detail,
-    }) => {
-      if (
-        type !==
-        EventType.PRESS
-      ) {
-        return;
-      }
-
-      const data =
-        detail.notification
-          ?.data;
-
-      const groupId =
-        data?.groupId;
-
-      if (
-        typeof groupId ===
-          'string' &&
-        onGroupOpen
-      ) {
-        onGroupOpen(
-          groupId,
-        );
-        return;
-      }
-
-      const assignmentId =
-        data?.assignmentId;
-
-      if (
-        typeof assignmentId ===
-        'string'
-      ) {
-        onOpen(
-          assignmentId,
-        );
-      }
+  await notifee.createTriggerNotification(
+    {
+      id: `${TEST_PREFIX}${Date.now()}`,
+      title: 'CSHARE',
+      body: callStyle
+        ? 'This is a test. You have an assignment. Please check the CSHARE app.'
+        : 'This is a test reminder.',
+      android: androidFor(callStyle),
     },
+    trigger(new Date(Date.now() + seconds * 1000)),
   );
 }
 
-// ------------------------------------------------------------------
-// OPENING CSHARE FROM NOTIFICATION
-// ------------------------------------------------------------------
+// ------------------------------------------------------------------ opening from a notification
 
-export async function getLaunchNotificationData(): Promise<
-  Record<string, unknown> | undefined
-> {
-  const initial =
-    await notifee
-      .getInitialNotification();
-
-  const data =
-    initial?.notification
-      .data;
-
-  return data
-    ? (data as Record<
-        string,
-        unknown
-      >)
-    : undefined;
+export function listenForNotificationPress(onOpen: (assignmentId: string) => void, onGroupOpen?: (groupId: string) => void): () => void {
+  return notifee.onForegroundEvent(({ type, detail }) => {
+    if (type !== EventType.PRESS) return;
+    const data = detail.notification?.data;
+    const groupId = data?.groupId;
+    if (typeof groupId === 'string' && onGroupOpen) {
+      onGroupOpen(groupId);
+      return;
+    }
+    const id = data?.assignmentId;
+    if (typeof id === 'string') onOpen(id);
+  });
 }
 
-export async function getLaunchAssignmentId(): Promise<
-  string | undefined
-> {
-  const data =
-    await getLaunchNotificationData();
+/** If the app was started by tapping a notification, return its data once. */
+export async function getLaunchNotificationData(): Promise<Record<string, unknown> | undefined> {
+  const initial = await notifee.getInitialNotification();
+  const data = initial?.notification.data;
+  return data ? (data as Record<string, unknown>) : undefined;
+}
 
-  const id =
-    data?.assignmentId;
+/** Backwards-compatible helper for callers that only need an assignment id. */
+export async function getLaunchAssignmentId(): Promise<string | undefined> {
+  const data = await getLaunchNotificationData();
+  const id = data?.assignmentId;
+  return typeof id === 'string' ? id : undefined;
+}
 
-  return typeof id ===
-    'string'
-    ? id
-    : undefined;
+// ------------------------------------------------------------------ push (needs internet)
+
+/**
+ * Saves this phone's FCM token on the user's profile so Cloud Functions can send
+ * "new assignment / changed / cancelled" messages while the phone is online.
+ * Returns a cleanup function.
+ */
+export async function registerPush(uid: string, onData: (data: { [k: string]: string | object } | undefined) => void): Promise<() => void> {
+  const token = await messaging().getToken();
+  await addFcmToken(uid, token);
+  const offRefresh = messaging().onTokenRefresh(t => {
+    addFcmToken(uid, t).catch(e => logError('token refresh', e));
+  });
+  // Push messages are "data only": the app decides what to do (sync now, or show a short notice).
+  const offMessage = messaging().onMessage(async m => {
+    onData(m.data);
+  });
+  return () => {
+    offRefresh();
+    offMessage();
+  };
+}
+
+export async function unregisterPush(uid: string): Promise<void> {
+  const token = await messaging().getToken();
+  await removeFcmToken(uid, token);
+  await messaging().deleteToken();
 }
