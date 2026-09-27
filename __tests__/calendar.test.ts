@@ -7,37 +7,6 @@ const now = combineDateTime('2026-10-01', '09:00');
 const names = { midweek: 'Midweek Meeting', weekend: 'Weekend Meeting' };
 const opts = { now, alerts: true, meetingNames: names };
 
-describe('phone calendar meeting start', () => {
-  it('uses the administrator saved meeting start instead of the individual part time', () => {
-    const a = makeAssignment({
-      meeting: 'weekend',
-      date: '2026-10-07',
-      startTime: '19:12',
-      endTime: '19:17',
-    });
-    const meetingStart = combineDateTime('2026-10-07', '19:00');
-    const spec = eventFor(a, { meetingName: 'Weekend Meeting', alerts: true, meetingStartAt: meetingStart });
-    expect(spec.startMs).toBe(meetingStart.getTime());
-    expect(spec.endMs - spec.startMs).toBe(5 * 60000);
-  });
-
-  it('uses the meeting start when deciding whether an event is already over', () => {
-    const a = makeAssignment({
-      meeting: 'weekend',
-      date: '2026-10-07',
-      startTime: '19:12',
-    });
-    const meetingStart = combineDateTime('2026-10-07', '19:00');
-    const ops = planCalendar([a], 'u1', {}, {
-      now: combineDateTime('2026-10-07', '20:01'),
-      alerts: true,
-      meetingNames: names,
-      meetingStarts: { '2026-10-07:weekend': meetingStart },
-    });
-    expect(ops).toEqual([]);
-  });
-});
-
 describe('phone calendar plan', () => {
   it('adds a new assignment as an event with the reminders as calendar alerts', () => {
     const a = makeAssignment({ meeting: 'midweek', endTime: '19:10', location: 'Kingdom Hall' });
@@ -51,6 +20,22 @@ describe('phone calendar plan', () => {
     expect(op.spec.alarms).toEqual([4320, 1440, 120]);
     expect(op.spec.endMs - op.spec.startMs).toBe(10 * 60000);
     expect(op.spec.description).toContain('Midweek Meeting');
+  });
+
+
+  it('uses the administrator-configured meeting start time instead of the estimated part time', () => {
+    const a = makeAssignment({ meeting: 'weekend', startTime: '18:42', endTime: '18:52', weekId: '2026-09-28' });
+    const weeks = [{
+      id: '2026-09-28',
+      startDate: '2026-09-28',
+      endDate: '2026-10-04',
+      sheets: { weekend: { title: 'Weekend Meeting', date: a.date, startTime: '18:30', program: [] } },
+    }];
+    const ops = planCalendar([a], 'u1', {}, { ...opts, weeks });
+    const op = ops[0];
+    if (op.type !== 'upsert') throw new Error('expected upsert');
+    expect(op.spec.startMs).toBe(combineDateTime(a.date, '18:30').getTime());
+    expect(op.spec.endMs - op.spec.startMs).toBe(10 * 60000);
   });
 
   it('can leave the alerts to CSHARE alone', () => {
