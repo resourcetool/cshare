@@ -236,6 +236,8 @@ export function planReminders(
     now: Date;
     callStyle: boolean;
     horizonDays?: number;
+    /** Optional admin-configured meeting start. When supplied, it is the reminder anchor. */
+    meetingStartAt?: Date;
   },
 ): PlannedReminder[] {
   // Only scheduled assignments.
@@ -256,9 +258,14 @@ export function planReminders(
     return [];
   }
 
-  // Assignment already started/passed.
+  // Use the admin-configured meeting start as the reminder anchor when available.
+  // Fall back to the assignment start for older assignments or data without a meeting sheet.
+  const anchorStartAt =
+    opts.meetingStartAt ?? a.startAt;
+
+  // The meeting has already started/passed.
   if (
-    a.startAt.getTime() <=
+    anchorStartAt.getTime() <=
     opts.now.getTime()
   ) {
     return [];
@@ -270,7 +277,7 @@ export function planReminders(
       DAY;
 
   const noticeMinutes =
-    (a.startAt.getTime() -
+    (anchorStartAt.getTime() -
       opts.now.getTime()) /
     MINUTE;
 
@@ -281,7 +288,7 @@ export function planReminders(
 
   points.forEach(offset => {
     const fireAt = new Date(
-      a.startAt.getTime() -
+      anchorStartAt.getTime() -
         offset * MINUTE,
     );
 
@@ -316,27 +323,27 @@ export function planReminders(
 
     if (offset === 0) {
       body =
-        `${a.title} starts now. ` +
-        `Please check the CSHARE app.`;
+        `The meeting starts now. ` +
+        `${a.title} is your assignment. Please check the CSHARE app.`;
     } else if (callStyle) {
       if (offset === 1440) {
         body =
-          `Your assignment is tomorrow: ` +
-          `${a.title}. Please check the CSHARE app.`;
+          `Your meeting is tomorrow. ` +
+          `You have ${a.title}. Please check the CSHARE app.`;
       } else if (offset === 60) {
         body =
-          `Your assignment starts in 1 hour: ` +
-          `${a.title}. Please check the CSHARE app.`;
+          `Your meeting starts in 1 hour. ` +
+          `You have ${a.title}. Please check the CSHARE app.`;
       } else {
         body =
-          `Your assignment starts in ${offset} minutes: ` +
-          `${a.title}. Please check the CSHARE app.`;
+          `Your meeting starts in ${offset} minutes. ` +
+          `You have ${a.title}. Please check the CSHARE app.`;
       }
     } else {
       body =
         `${candidateLabel(offset)}: ` +
         `${a.title} is ${whenPhrase(
-          a,
+          { ...a, startAt: anchorStartAt, startTime: `${anchorStartAt.getHours().toString().padStart(2, '0')}:${anchorStartAt.getMinutes().toString().padStart(2, '0')}`, date: toDateKey(anchorStartAt) },
           fireAt,
         )}.`;
     }
