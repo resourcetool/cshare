@@ -228,7 +228,7 @@ export function CalendarSettings() {
             <View style={{ marginBottom: space.md }}>
               <Label style={{ marginBottom: space.sm }}>Which calendar?</Label>
               <ChipRow>
-                {calendars.map(c => (
+                {calendars.map((c: DeviceCalendar) => (
                   <Chip key={c.id} label={c.account && c.account !== c.name ? `${c.name} (${c.account})` : c.name} selected={prefs.calendarId === c.id} onPress={() => choose(c.id)} />
                 ))}
               </ChipRow>
