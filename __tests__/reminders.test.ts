@@ -165,3 +165,39 @@ describe('Smart Reminder Engine', () => {
     expect(normalizeOffsets([120, 1440, 1440, -5, 0, 4320, 30])).toEqual([4320, 1440, 120]);
   });
 });
+describe('Admin meeting start anchor', () => {
+  it('uses the admin-configured meeting start instead of the individual part time', () => {
+    const meetingStart = combineDateTime('2026-10-06', '18:30');
+    const partStart = combineDateTime('2026-10-06', '18:42');
+    const received = combineDateTime('2026-10-06', '17:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '18:42' });
+
+    const plan = planReminders(a, 'u1', {
+      now: received,
+      callStyle: true,
+      meetingStartAt: meetingStart,
+    });
+
+    const offsets = plan.map(p =>
+      Math.round((meetingStart.getTime() - p.fireAt.getTime()) / 60000),
+    );
+
+    expect(offsets).toEqual([60, 30, 20, 10, 2, 0]);
+    expect(plan[plan.length - 1].fireAt.getTime()).toBe(meetingStart.getTime());
+    expect(plan[plan.length - 1].body).toContain('meeting starts now');
+    expect(plan.every(p => p.fireAt.getTime() !== partStart.getTime())).toBe(true);
+  });
+
+  it('falls back to the assignment start when no meeting start is supplied', () => {
+    const partStart = combineDateTime('2026-10-06', '18:42');
+    const received = combineDateTime('2026-10-06', '17:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '18:42' });
+
+    const plan = planReminders(a, 'u1', {
+      now: received,
+      callStyle: true,
+    });
+
+    expect(plan[plan.length - 1].fireAt.getTime()).toBe(partStart.getTime());
+  });
+});
