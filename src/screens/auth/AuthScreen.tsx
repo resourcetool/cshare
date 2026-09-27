@@ -62,7 +62,7 @@ export default function AuthScreen() {
       {error ? <Notice tone="bad" message={error} /> : null}
 
       <TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-      <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} hint={mode === 'signup' ? '10+ characters, with uppercase, lowercase, number and special character.' : undefined} />
+      <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry showPasswordToggle autoCapitalize="none" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} hint={mode === 'signup' ? '10+ characters, with uppercase, lowercase, number and special character.' : undefined} />
       <Button label={mode === 'signin' ? 'Sign in' : 'Create account'} onPress={submit} loading={busy} />
       {mode === 'signin' ? <Button label="Forgot password?" variant="ghost" onPress={forgot} style={{ marginTop: space.sm }} /> : null}
       <Small style={{ marginTop: space.lg }}>
