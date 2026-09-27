@@ -128,8 +128,6 @@ export default function MyReportScreen() {
     );
   }
 
-  const todayEntry = byDate[todayKey];
-
   const beginEdit = (dateKey: string) => {
     const entry = byDate[dateKey];
     setEditingDate(dateKey);
