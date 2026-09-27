@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
-import { Assignment, AppSettings, Meeting } from '../types';
+import { Assignment, AppSettings, Week } from '../types';
 import { CalendarMap, eventFor, planCalendar } from '../utils/calendarPlan';
 import { logError } from '../utils/errors';
 import { getWeek } from './weekService';
@@ -87,40 +87,23 @@ async function writeMap(uid: string, map: CalendarMap): Promise<void> {
   await AsyncStorage.setItem(MAP_KEY, JSON.stringify(all));
 }
 
-/**
- * Reads the meeting start saved by the administrator on the weekly meeting sheet.
- * This is deliberately separate from an assignment's estimated part time: the
- * latter can be 10–20 minutes after the meeting begins and can change with pacing.
- */
-async function loadMeetingStarts(assignments: Assignment[]): Promise<Record<string, Date>> {
-  const keys = new Set<string>();
-  for (const a of assignments) {
-    if (a.meeting === 'midweek' || a.meeting === 'weekend') keys.add(`${a.weekId}:${a.meeting}`);
-  }
-
-  const out: Record<string, Date> = {};
-  await Promise.all(
-    Array.from(keys).map(async key => {
-      const [weekId, meeting] = key.split(':') as [string, Meeting];
+async function loadMeetingWeeks(assignments: Assignment[]): Promise<Week[]> {
+  const ids = Array.from(new Set(
+    assignments
+      .filter(a => a.meeting === 'midweek' || a.meeting === 'weekend')
+      .map(a => a.weekId),
+  ));
+  const results = await Promise.all(
+    ids.map(async id => {
       try {
-        const week = await getWeek(weekId);
-        const sheet = week?.sheets[meeting];
-        if (!sheet?.date || !sheet.startTime) return;
-        // The sheet date is the authoritative meeting date. Assignments normally
-        // have the same date, but using the sheet keeps the calendar tied to the
-        // administrator's saved meeting definition.
-        const [year, month, day] = sheet.date.split('-').map(Number);
-        const [hour, minute] = sheet.startTime.split(':').map(Number);
-        const start = new Date(year, month - 1, day, hour, minute, 0, 0);
-        if (!Number.isNaN(start.getTime())) out[key] = start;
+        return await getWeek(id);
       } catch (e) {
-        // If the weekly sheet cannot be read, calendar sync still works using the
-        // assignment's own startAt as a safe compatibility fallback.
-        logError(`calendar meeting start ${key}`, e);
+        logError(`calendar week ${id}`, e);
+        return null;
       }
     }),
   );
-  return out;
+  return results.filter((w): w is Week => w !== null);
 }
 
 let running: Promise<void> = Promise.resolve();
@@ -129,25 +112,39 @@ let running: Promise<void> = Promise.resolve();
  * Makes the phone calendar match this person's assignments. Safe to call often; does nothing
  * unless the person switched it on and allowed calendar access. Never throws.
  */
-export function syncCalendar(assignments: Assignment[], uid: string, settings: Pick<AppSettings, 'midweekName' | 'weekendName'>): Promise<void> {
+export function syncCalendar(
+  assignments: Assignment[],
+  uid: string,
+  settings: Pick<AppSettings, 'midweekName' | 'weekendName'>,
+  weeks: Week[] = [],
+): Promise<void> {
   // one run at a time, so two triggers never create the same event twice
-  running = running.then(() => doSync(assignments, uid, settings)).catch(e => logError('calendar sync', e));
+  running = running.then(() => doSync(assignments, uid, settings, weeks)).catch(e => logError('calendar sync', e));
   return running;
 }
 
-async function doSync(assignments: Assignment[], uid: string, settings: Pick<AppSettings, 'midweekName' | 'weekendName'>): Promise<void> {
+async function doSync(
+  assignments: Assignment[],
+  uid: string,
+  settings: Pick<AppSettings, 'midweekName' | 'weekendName'>,
+  weeks: Week[],
+): Promise<void> {
   const mod = native();
   const prefs = await getCalendarPrefs();
   if (!mod || !prefs.enabled || prefs.calendarId === undefined) return;
   if (!(await mod.hasPermission())) return;
 
   const map = await readMap(uid);
-  const meetingStarts = await loadMeetingStarts(assignments);
+
+  // Normally AppDataContext supplies the nearby weeks. Background calendar sync can also
+  // call this function without them, so load only the specific meeting weeks needed.
+  const resolvedWeeks = weeks.length > 0 ? weeks : await loadMeetingWeeks(assignments);
+
   const ops = planCalendar(assignments, uid, map, {
     now: new Date(),
     alerts: prefs.alerts,
     meetingNames: { midweek: settings.midweekName, weekend: settings.weekendName },
-    meetingStarts,
+    weeks: resolvedWeeks,
   });
   if (ops.length === 0) return;
 
@@ -202,6 +199,7 @@ export async function addAssignmentToDeviceCalendar(
   a: Assignment,
   uid: string,
   meetingName: string | undefined,
+  meetingStartTime?: string,
 ): Promise<AddToPhoneResult> {
   const mod = native();
   if (!mod) return { ok: false, reason: 'unsupported' };
@@ -216,12 +214,7 @@ export async function addAssignmentToDeviceCalendar(
     const chosen = list.find(c => c.id === prefs.calendarId) ?? list.find(c => c.account.includes('@')) ?? list[0];
 
     const map = await readMap(uid);
-    const meetingStarts = await loadMeetingStarts([a]);
-    const spec = eventFor(a, {
-      meetingName,
-      alerts: true,
-      meetingStartAt: a.meeting ? meetingStarts[`${a.weekId}:${a.meeting}`] : undefined,
-    });
+    const spec = eventFor(a, { meetingName, meetingStartTime, alerts: true });
     const eventId = await mod.upsertEvent(chosen.id, map[a.id]?.eventId ?? 0, spec.title, spec.description, spec.location, spec.startMs, spec.endMs, spec.alarms);
     await writeMap(uid, { ...map, [a.id]: { eventId, sig: spec.sig, startMs: spec.startMs } });
     return { ok: true, calendarName: chosen.name };

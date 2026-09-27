@@ -13,7 +13,7 @@ function mapRow(d: { [k: string]: any }): ProgramRow { // eslint-disable-line @t
     section: d.section ?? '',
     label: d.label ?? '',
     title: d.title ?? '',
-    icon: d.icon ?? 'ðŸ“Œ',
+    icon: d.icon ?? '📌',
     minutes: typeof d.minutes === 'number' ? d.minutes : 0,
     numbered: d.numbered === true,
     requiresQualification: d.requiresQualification === true,
