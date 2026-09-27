@@ -125,7 +125,7 @@ export function AppDataProvider({ profile, children }: { profile: UserProfile; c
       try {
         const result = await syncLocalReminders(myAssignments, profile.id, { remindersEnabled: reminders, callStyle: callStyleOn });
         await announceNew(myAssignments, profile.id, reminders, callStyleOn);
-        await syncCalendar(myAssignments, profile.id, settings);
+        await syncCalendar(myAssignments, profile.id, settings, weeks);
         const cap = await getReminderCapability();
         if (cancelled) return;
         if (result.blocked === 'notifications') setIssue(reminders ? 'notifications' : null);
