@@ -9,7 +9,9 @@ import notifee, {
   TriggerType,
 } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
+import firestore from '@react-native-firebase/firestore';
 import { Assignment } from '../types';
+import { combineDateTime, isValidTime } from '../utils/dates';
 import { logError } from '../utils/errors';
 import { planReminders } from '../utils/reminders';
 import { addFcmToken, removeFcmToken } from './userService';
@@ -81,6 +83,84 @@ function trigger(at: Date): TimestampTrigger {
   };
 }
 
+/**
+ * Gets the administrator-configured meeting start for each assignment.
+ *
+ * The meeting start lives in the existing `weeks/{weekId}` document, inside
+ * the selected meeting sheet. Nothing new is written to the assignment and
+ * no Firestore rule change is required.
+ *
+ * If an older assignment has no usable meeting sheet, we safely fall back to
+ * that assignment's own startAt.
+ */
+async function resolveMeetingStartTimes(
+  assignments: Assignment[],
+): Promise<Map<string, Date>> {
+  const result = new Map<string, Date>();
+  const weekIds = Array.from(
+    new Set(
+      assignments
+        .map(a => a.weekId)
+        .filter(Boolean),
+    ),
+  );
+
+  if (!weekIds.length) return result;
+
+  const snapshots = await Promise.all(
+    weekIds.map(async weekId => {
+      try {
+        return [
+          weekId,
+          await firestore().collection('weeks').doc(weekId).get(),
+        ] as const;
+      } catch (error) {
+        logError(`meeting start read ${weekId}`, error);
+        return [weekId, null] as const;
+      }
+    }),
+  );
+
+  const weeks = new Map(snapshots);
+
+  for (const assignment of assignments) {
+    const snap = weeks.get(assignment.weekId);
+    const data = snap?.data();
+    if (!data) continue;
+
+    const candidates: Array<{ date?: unknown; startTime?: unknown }> = [];
+
+    if (assignment.meeting === 'midweek' || assignment.meeting === 'weekend') {
+      if (data[assignment.meeting]) candidates.push(data[assignment.meeting]);
+    } else {
+      // Legacy assignments may not have `meeting`. Match the sheet by its date.
+      if (data.midweek) candidates.push(data.midweek);
+      if (data.weekend) candidates.push(data.weekend);
+    }
+
+    const sheet = candidates.find(candidate =>
+      candidate &&
+      typeof candidate.date === 'string' &&
+      candidate.date === assignment.date &&
+      typeof candidate.startTime === 'string' &&
+      isValidTime(candidate.startTime),
+    );
+
+    if (
+      sheet &&
+      typeof sheet.date === 'string' &&
+      typeof sheet.startTime === 'string'
+    ) {
+      result.set(
+        assignment.id,
+        combineDateTime(sheet.date, sheet.startTime),
+      );
+    }
+  }
+
+  return result;
+}
+
 export function androidFor(callStyle: boolean) {
   if (!callStyle) {
     return {
@@ -133,8 +213,18 @@ export async function syncLocalReminders(
   const cap = await getReminderCapability();
   if (!cap.notifications) return { scheduled: 0, blocked: 'notifications' };
 
+  const meetingStarts = opts.remindersEnabled
+    ? await resolveMeetingStartTimes(assignments)
+    : new Map<string, Date>();
+
   const planned = opts.remindersEnabled
-    ? assignments.flatMap(a => planReminders(a, uid, { now: new Date(), callStyle: opts.callStyle }))
+    ? assignments.flatMap(a =>
+        planReminders(a, uid, {
+          now: new Date(),
+          callStyle: opts.callStyle,
+          meetingStartAt: meetingStarts.get(a.id),
+        }),
+      )
     : [];
   const wanted = new Set(planned.map(p => p.id));
 
