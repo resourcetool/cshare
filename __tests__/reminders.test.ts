@@ -49,17 +49,42 @@ describe('Smart Reminder Engine', () => {
     expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:28').getTime())).toBe(true); // 2m before
   });
 
-  it('worked example: short-notice assignment still gets useful reminders (spec #17)', () => {
-    // "Tuesday 5:45 PM" now, assignment "Tuesday 6:30 PM" — 45 minutes' notice
-    const start = combineDateTime('2026-10-06', '18:30');
-    const a = makeAssignment({ date: '2026-10-06', startTime: '18:30' });
-    const soonNow = combineDateTime('2026-10-06', '17:45');
-    const plan = planReminders(a, 'u1', { now: soonNow, callStyle: true });
-    expectSanePlan(plan, soonNow, start, true);
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:10').getTime())).toBe(true); // 20m before
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:20').getTime())).toBe(true); // 10m before
-    expect(plan.some(p => p.fireAt.getTime() === combineDateTime('2026-10-06', '18:28').getTime())).toBe(true); // 2m before
+  it('adapts naturally when an assignment arrives 3 hours before start', () => {
+    const start = combineDateTime('2026-10-06', '16:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '16:00' });
+    const received = combineDateTime('2026-10-06', '13:00');
+    const plan = planReminders(a, 'u1', { now: received, callStyle: true });
+    const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(offsets).toEqual([120, 60, 30, 20, 10, 2, 0]);
   });
+
+  it('adapts naturally when an assignment arrives 1 hour before start', () => {
+    const start = combineDateTime('2026-10-06', '16:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '16:00' });
+    const received = combineDateTime('2026-10-06', '15:00');
+    const plan = planReminders(a, 'u1', { now: received, callStyle: true });
+    const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(offsets).toEqual([40, 20, 10, 2, 0]);
+  });
+
+  it('adapts naturally when an assignment arrives 45 minutes before start', () => {
+    const start = combineDateTime('2026-10-06', '16:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '16:00' });
+    const received = combineDateTime('2026-10-06', '15:15');
+    const plan = planReminders(a, 'u1', { now: received, callStyle: true });
+    const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(offsets).toEqual([40, 20, 10, 2, 0]);
+  });
+
+  it('adapts naturally when an assignment arrives 7 minutes before start', () => {
+    const start = combineDateTime('2026-10-06', '16:00');
+    const a = makeAssignment({ date: '2026-10-06', startTime: '16:00' });
+    const received = combineDateTime('2026-10-06', '15:53');
+    const plan = planReminders(a, 'u1', { now: received, callStyle: true });
+    const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
+    expect(offsets).toEqual([2, 0]);
+  });
+
 
   it('never leaves someone with zero reminders, even with only a couple of minutes notice', () => {
     const start = combineDateTime('2026-10-06', '18:30');
@@ -78,7 +103,7 @@ describe('Smart Reminder Engine', () => {
     const plan = planReminders(a, 'u1', { now: sixDaysOut, callStyle: true });
 
     const offsets = plan.map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
-    expect(offsets).toEqual([7200, 5760, 4320, 2880, 1440, 360, 60, 20, 10, 2, 0]);
+    expect(offsets).toEqual([7200, 5760, 4320, 2880, 1440, 360, 60, 30, 20, 10, 2, 0]);
 
     const callOffsets = plan.filter(p => p.callStyle).map(p => Math.round((start.getTime() - p.fireAt.getTime()) / 60000));
     expect(callOffsets).toEqual([1440, 60, 2, 0]);
