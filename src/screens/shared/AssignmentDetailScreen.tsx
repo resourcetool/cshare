@@ -16,7 +16,7 @@ import { statusFor, statusLabel, statusTone } from '../../utils/status';
 export default function AssignmentDetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<SharedStackParams>>();
   const route = useRoute<RouteProp<SharedStackParams, 'AssignmentDetail'>>();
-  const { profile, settings, myAssignments, myLoading } = useAppData();
+  const { profile, settings, weeks, myAssignments, myLoading } = useAppData();
   const a = myAssignments.find(x => x.id === route.params.assignmentId);
   const [error, setError] = useState<string | null>(null);
   const [calendarNote, setCalendarNote] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
@@ -48,6 +48,7 @@ export default function AssignmentDetailScreen() {
   const others = a.assigneeIds.filter(id => id !== profile.id).map(id => a.assigneeNames[id] ?? 'Someone');
   const response = a.responses[profile.id];
   const meetingName = a.meeting === 'weekend' ? settings.weekendName : a.meeting === 'midweek' ? settings.midweekName : undefined;
+  const meetingStartTime = a.meeting ? weeks.find(w => w.id === a.weekId)?.sheets[a.meeting]?.startTime : undefined;
 
   const undo = async () => {
     try {
@@ -64,7 +65,7 @@ export default function AssignmentDetailScreen() {
     setAddingToPhone(true);
     setCalendarNote(null);
     try {
-      const result = await addAssignmentToDeviceCalendar(a, profile.id, meetingName);
+      const result = await addAssignmentToDeviceCalendar(a, profile.id, meetingName, meetingStartTime);
       if (result.ok) setCalendarNote({ tone: 'good', text: `Added to “${result.calendarName}” on your phone.` });
       else if (result.reason === 'permission_denied') setCalendarNote({ tone: 'bad', text: 'Calendar access was not allowed, so this could not be added. You can allow it in your phone’s settings for CSHARE.' });
       else if (result.reason === 'no_calendar') setCalendarNote({ tone: 'bad', text: 'No calendar was found on this phone. Open the Google Calendar app once and sign in, then try again.' });
