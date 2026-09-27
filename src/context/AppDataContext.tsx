@@ -76,6 +76,7 @@ export function AppDataProvider({ profile, children }: { profile: UserProfile; c
 
   const settings = settingsLive.data ?? DEFAULT_SETTINGS;
   const myAssignments = useMemo(() => mine.data ?? [], [mine.data]);
+  const weeks = weeksLive.data ?? [];
   const { reminders, callStyle } = profile.notificationPreferences;
   const callStyleOn = settings.callStyleEnabled && callStyle;
 
