@@ -173,7 +173,7 @@ export function CalendarSettings() {
         setNote({ tone: 'bad', text: 'No calendar was found on this phone. Open the Google Calendar app once and sign in, then try again.' });
         return;
       }
-      const pick = list.find(c => c.account.includes('@')) ?? list[0];
+      const pick = list.find((c: DeviceCalendar) => c.account.includes('@')) ?? list[0];
       await save({ ...prefs, enabled: true, calendarId: pick.id });
       await syncCalendar(myAssignments, profile.id, settings);
       setNote({ tone: 'good', text: `Done. Your assignments are now in “${pick.name}”.` });
