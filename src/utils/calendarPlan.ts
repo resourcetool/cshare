@@ -1,4 +1,4 @@
-import { Assignment, Meeting } from '../types';
+import { Assignment, Meeting, Week } from '../types';
 import { combineDateTime } from './dates';
 import { normalizeOffsets } from './reminders';
 
@@ -29,9 +29,16 @@ function hash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-export function eventFor(a: Assignment, opts: { meetingName?: string; alerts: boolean }): CalendarEventSpec {
-  const startMs = a.startAt.getTime();
-  let endMs = a.endTime ? combineDateTime(a.date, a.endTime).getTime() : startMs + 30 * 60000;
+export function eventFor(a: Assignment, opts: { meetingName?: string; alerts: boolean; meetingStartTime?: string }): CalendarEventSpec {
+  // The phone calendar follows the admin's meeting start time, not the estimated
+  // start time of the individual part. This keeps the calendar anchored to the
+  // real meeting even when the program runs ahead or behind schedule.
+  const calendarStart = opts.meetingStartTime?.trim() || a.startTime;
+  const startMs = combineDateTime(a.date, calendarStart).getTime();
+  const assignmentDurationMs = a.endTime
+    ? Math.max(1, combineDateTime(a.date, a.endTime).getTime() - a.startAt.getTime())
+    : 30 * 60000;
+  let endMs = startMs + assignmentDurationMs;
   if (endMs <= startMs) endMs = startMs + 30 * 60000;
   const others = Object.entries(a.assigneeNames).map(([, name]) => name);
   const description = [
@@ -53,7 +60,7 @@ export function planCalendar(
   assignments: Assignment[],
   uid: string,
   map: CalendarMap,
-  opts: { now: Date; alerts: boolean; meetingNames: Record<Meeting, string> },
+  opts: { now: Date; alerts: boolean; meetingNames: Record<Meeting, string>; weeks?: Week[] },
 ): CalendarOp[] {
   const nowMs = opts.now.getTime();
   const ops: CalendarOp[] = [];
@@ -64,7 +71,13 @@ export function planCalendar(
     if (a.responses[uid]?.status === 'cannot_do') continue;
     if (a.startAt.getTime() < nowMs - 3600000) continue; // already over
     wanted.add(a.id);
-    const spec = eventFor(a, { meetingName: a.meeting ? opts.meetingNames[a.meeting] : undefined, alerts: opts.alerts });
+    const sheet = a.meeting ? opts.weeks?.find(w => w.id === a.weekId)?.sheets[a.meeting] : undefined;
+    const meetingStartTime = sheet?.startTime?.trim() || undefined;
+    const spec = eventFor(a, {
+      meetingName: a.meeting ? opts.meetingNames[a.meeting] : undefined,
+      meetingStartTime,
+      alerts: opts.alerts,
+    });
     const prev = map[a.id];
     if (!prev) ops.push({ type: 'upsert', assignmentId: a.id, eventId: 0, spec });
     else if (prev.sig !== spec.sig) ops.push({ type: 'upsert', assignmentId: a.id, eventId: prev.eventId, spec });
