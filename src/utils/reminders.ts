@@ -99,49 +99,67 @@ function candidateLabel(minutes: number): string {
  *   start time
  */
 function awarenessOffsets(noticeMinutes: number): number[] {
-  const points: number[] = [];
+  /*
+   * Adaptive checkpoints. The assignment-arrival notification is
+   * separate; these are only future scheduled reminders.
+   *
+   * 6 days notice -> 5d, 4d, 3d, 2d, 1d, 6h, 1h, 20m, 10m, 2m, start
+   * 3 hours notice -> 2h, 1h, 30m, 20m, 10m, 2m, start
+   * 1 hour notice  -> 40m, 20m, 10m, 2m, start
+   * 45m notice     -> 40m, 20m, 10m, 2m, start
+   * 7m notice      -> 2m, start
+   * 1m notice      -> start
+   */
+  const checkpoints: number[] = [];
 
-  if (noticeMinutes > 5 * 1440) {
-    points.push(
-      5 * 1440,
-      4 * 1440,
-      3 * 1440,
-      2 * 1440,
-      1440,
-    );
-  } else if (noticeMinutes > 4 * 1440) {
-    points.push(
-      4 * 1440,
-      3 * 1440,
-      2 * 1440,
-      1440,
-    );
-  } else if (noticeMinutes > 3 * 1440) {
-    points.push(
-      3 * 1440,
-      2 * 1440,
-      1440,
-    );
-  } else if (noticeMinutes > 2 * 1440) {
-    points.push(
-      2 * 1440,
-      1440,
-    );
-  } else if (noticeMinutes > 1440) {
-    points.push(1440);
+  if (noticeMinutes > 1440) {
+    // Long notice: one checkpoint per full day, excluding the
+    // exact moment the assignment was received.
+    const fullDays = Math.floor(noticeMinutes / 1440);
+    for (let days = fullDays; days >= 1; days -= 1) {
+      checkpoints.push(days * 1440);
+    }
+
+    // Once the assignment is on the same day, increase the pace.
+    checkpoints.push(360, 60, 20, 10, 2);
+  } else if (noticeMinutes > 360) {
+    // Several hours' notice: use the 6-hour checkpoint and then
+    // the final hour/minute checkpoints.
+    checkpoints.push(360, 60, 20, 10, 2);
+  } else {
+    // Same-day short notice: choose checkpoints that fit naturally
+    // inside the actual amount of notice available.
+    if (noticeMinutes > 180) {
+      checkpoints.push(180);
+    }
+
+    if (noticeMinutes > 120) {
+      checkpoints.push(120);
+    }
+
+    if (noticeMinutes > 60) {
+      checkpoints.push(60, 30);
+    } else if (noticeMinutes > 40) {
+      checkpoints.push(40);
+    }
+
+    if (noticeMinutes > 20) {
+      checkpoints.push(20);
+    }
+
+    if (noticeMinutes > 10) {
+      checkpoints.push(10);
+    }
+
+    if (noticeMinutes > 2) {
+      checkpoints.push(2);
+    }
   }
 
-  // Same-day reminders.
-  points.push(
-    360,
-    60,
-    20,
-    10,
-    2,
-    0,
-  );
+  // Always keep the actual start-time reminder.
+  checkpoints.push(0);
 
-  return points;
+  return Array.from(new Set(checkpoints));
 }
 
 export interface PlannedReminder {
@@ -287,8 +305,6 @@ export function planReminders(
     const callStyleOffset =
       offset === 1440 ||
       offset === 60 ||
-      offset === 20 ||
-      offset === 10 ||
       offset === 2 ||
       offset === 0;
 
