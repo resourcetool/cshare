@@ -13,7 +13,7 @@ function mapRow(d: { [k: string]: any }): ProgramRow { // eslint-disable-line @t
     section: d.section ?? '',
     label: d.label ?? '',
     title: d.title ?? '',
-    icon: d.icon ?? '📌',
+    icon: d.icon ?? 'ðŸ“Œ',
     minutes: typeof d.minutes === 'number' ? d.minutes : 0,
     numbered: d.numbered === true,
     requiresQualification: d.requiresQualification === true,
@@ -81,6 +81,12 @@ function mapWeek(id: string, d: { [k: string]: any }): Week { // eslint-disable-
     createdAt: toDate(d.createdAt),
     updatedAt: toDate(d.updatedAt),
   };
+}
+
+export async function getWeek(weekId: string): Promise<Week | null> {
+  const snap = await col().doc(weekId).get();
+  const d = snap.data();
+  return snap.exists && d ? mapWeek(snap.id, d) : null;
 }
 
 export function subscribeToWeek(
