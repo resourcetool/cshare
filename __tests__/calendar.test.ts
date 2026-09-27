@@ -22,6 +22,22 @@ describe('phone calendar plan', () => {
     expect(op.spec.description).toContain('Midweek Meeting');
   });
 
+
+  it('uses the administrator-configured meeting start time instead of the estimated part time', () => {
+    const a = makeAssignment({ meeting: 'weekend', startTime: '18:42', endTime: '18:52', weekId: '2026-09-28' });
+    const weeks = [{
+      id: '2026-09-28',
+      startDate: '2026-09-28',
+      endDate: '2026-10-04',
+      sheets: { weekend: { title: 'Weekend Meeting', date: a.date, startTime: '18:30', program: [] } },
+    }];
+    const ops = planCalendar([a], 'u1', {}, { ...opts, weeks });
+    const op = ops[0];
+    if (op.type !== 'upsert') throw new Error('expected upsert');
+    expect(op.spec.startMs).toBe(combineDateTime(a.date, '18:30').getTime());
+    expect(op.spec.endMs - op.spec.startMs).toBe(10 * 60000);
+  });
+
   it('can leave the alerts to CSHARE alone', () => {
     const spec = eventFor(makeAssignment(), { alerts: false });
     expect(spec.alarms).toEqual([]);
