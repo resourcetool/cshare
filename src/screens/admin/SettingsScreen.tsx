@@ -152,6 +152,18 @@ export default function SettingsScreen() {
       <Group title="General">
         <SectionTitle>Appearance</SectionTitle>
         <AppearanceSettings />
+
+        <SectionTitle>Emergency communication</SectionTitle>
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <IconBadge icon="attention" />
+            <View style={{ flex: 1, marginLeft: space.md }}>
+              <Body style={{ fontWeight: '700' }}>Emergency email</Body>
+              <Small>Send an urgent message to the entire congregation, selected groups, or specific people.</Small>
+            </View>
+          </View>
+          <Button label="Open emergency email" variant="secondary" onPress={() => nav.navigate('EmergencyEmail')} style={{ marginTop: space.md }} />
+        </Card>
       </Group>
 
       {/* MEETINGS -------------------------------------------------------------------- */}
