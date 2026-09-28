@@ -56,19 +56,19 @@ export const darkColors: Palette = {
  * (so the app still looks correct in light mode there); everything theme-aware uses useTheme(). */
 export const colors = lightColors;
 
-export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
-export const radius = { sm: 8, md: 12, lg: 18, pill: 999 };
-export const TOUCH = 56;
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 22, xxl: 28 };
+export const radius = { sm: 7, md: 10, lg: 14, pill: 999 };
+export const TOUCH = 52;
 
 export type TextStyles = Record<'title' | 'heading' | 'body' | 'small' | 'label', TextStyle>;
 
 export function makeText(palette: Palette): TextStyles {
   return {
-    title: { fontSize: 26, lineHeight: 32, fontWeight: '700', color: palette.ink },
-    heading: { fontSize: 20, lineHeight: 26, fontWeight: '700', color: palette.ink },
-    body: { fontSize: 17, lineHeight: 24, color: palette.ink },
-    small: { fontSize: 15, lineHeight: 21, color: palette.muted },
-    label: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: palette.ink },
+    title: { fontSize: 25, lineHeight: 31, fontWeight: '700', letterSpacing: -0.25, color: palette.ink },
+    heading: { fontSize: 18, lineHeight: 24, fontWeight: '700', letterSpacing: -0.1, color: palette.ink },
+    body: { fontSize: 16, lineHeight: 22, color: palette.ink },
+    small: { fontSize: 14, lineHeight: 20, color: palette.muted },
+    label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: palette.ink },
   };
 }
 
