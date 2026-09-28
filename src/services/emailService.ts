@@ -9,7 +9,7 @@ const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 export const EMAILJS_CONFIG = {
   publicKey: 'Rebgj-ozSdLuQoOUr',
   serviceId: 'service_3ktp01l',
-  templateId: 'template_jiazr2k',
+  templateId: ':template_9y0k4ch',
 } as const;
 
 export interface EmergencyEmailRecipient {
