@@ -176,6 +176,33 @@ export function submitReport(
   );
 }
 
+/**
+ * Correct the signed-in user's own already-submitted report.
+ *
+ * The Firestore rules keep the identity, month, reporting type and group
+ * snapshot immutable. Only the report values may be corrected.
+ */
+export function updateMyReport(
+  uid: string,
+  monthKey: string,
+  patch: Pick<MonthlyReportInput, 'participated' | 'hours' | 'bibleStudies'>,
+): Promise<CommitResult> {
+  return commit(
+    reports()
+      .doc(reportId(uid, monthKey))
+      .update({
+        ...(patch.participated !== undefined ? { participated: patch.participated } : {}),
+        ...(patch.hours !== undefined ? { hours: patch.hours } : {}),
+        ...(patch.bibleStudies !== undefined
+          ? { bibleStudies: patch.bibleStudies }
+          : patch.participated === false
+            ? { bibleStudies: firestore.FieldValue.delete() }
+            : {}),
+        updatedAt: now(),
+      }),
+  );
+}
+
 /** Live reports belonging to one ministry group. */
 export function subscribeToGroupReports(
   groupId: string,
