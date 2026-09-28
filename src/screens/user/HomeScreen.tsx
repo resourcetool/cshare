@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
 import { MyAssignments } from '../../components/MyAssignments';
 import { AppUpdateNotice } from '../../components/AppUpdateNotice';
-import { Badge, Button, Card, Heading, IconBadge, Notice, Small, Title } from '../../components/ui';
+import { Badge, Button, Card, Heading, Notice, Small, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { useLive } from '../../hooks/useLive';
 import { UserNav } from '../../navigation/types';
@@ -52,16 +52,10 @@ export default function HomeScreen() {
 
       {overseerGroup || profile.secretary ? (
         <Card onPress={() => nav.navigate('GroupReport', undefined)} accessibilityLabel="Group Monthly Report">
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconBadge icon="👥" size={48} />
-            <View style={{ flex: 1, paddingHorizontal: space.md }}>
-              <Heading>Group Monthly Reports</Heading>
-              <Small>
-                {profile.secretary && !overseerGroup
-                  ? 'All ministry groups'
-                  : `${overseerGroup?.name} · Your submitted reports`}
-                {' · '}{formatMonthLong(currentMonthKey)}
-              </Small>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1, paddingRight: space.sm }}>
+              <Heading>Group Monthly Report</Heading>
+              <Small>{profile.secretary && !overseerGroup ? 'All ministry groups' : overseerGroup?.name} · {formatMonthLong(currentMonthKey)}</Small>
             </View>
             <Badge label={profile.secretary ? 'All groups' : 'Open'} tone="info" />
           </View>
