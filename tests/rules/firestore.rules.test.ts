@@ -205,13 +205,61 @@ describe('monthly reports', () => {
     await assertFails(setDoc(doc(as('user2'), 'reports/user2_2026-11'), report({ uid: 'user2', monthKey: '2026-11', createdBy: 'user2', reportingType: 'not-a-type' })));
     await assertFails(setDoc(doc(as('user2'), 'reports/user2_2026-11'), report({ uid: 'user2', monthKey: 'October', createdBy: 'user2' })));
   });
-  it('only an administrator can correct an already-submitted report', async () => {
-    await assertFails(updateDoc(doc(as('user1'), 'reports/user1_2026-10'), { hours: 60 }));
+  it('a person can correct their own already-submitted report without changing its identity', async () => {
+    await assertSucceeds(updateDoc(doc(as('user1'), 'reports/user1_2026-10'), {
+      hours: 60,
+      bibleStudies: 4,
+      updatedAt: Timestamp.now(),
+    }));
+    await assertFails(updateDoc(doc(as('user1'), 'reports/user1_2026-10'), { uid: 'user2' }));
+    await assertFails(updateDoc(doc(as('user1'), 'reports/user1_2026-10'), { groupId: 'g2' }));
+    await assertFails(updateDoc(doc(as('user1'), 'reports/user1_2026-10'), { reportingType: 'publisher' }));
     await assertSucceeds(updateDoc(doc(as('admin1'), 'reports/user1_2026-10'), { hours: 60 }));
   });
   it('nobody can delete a report', async () => {
     await assertFails(deleteDoc(doc(as('user1'), 'reports/user1_2026-10')));
     await assertFails(deleteDoc(doc(as('admin1'), 'reports/user1_2026-10')));
+  });
+});
+
+describe('daily field-service entries', () => {
+  it('auxiliary and regular pioneers can create, read and correct their own calendar entries', async () => {
+    await env.withSecurityRulesDisabled(async ctx => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'users/pioneer'), profile({
+        name: 'Pioneer',
+        email: 'pioneer@example.com',
+        reportingType: 'regular_pioneer',
+      }));
+    });
+
+    const db = as('pioneer');
+    const entry = doc(db, 'serviceEntries/pioneer/entries/2026-10-12');
+
+    await assertSucceeds(setDoc(entry, {
+      uid: 'pioneer',
+      date: '2026-10-12',
+      monthKey: '2026-10',
+      hours: 3,
+      bibleStudies: 1,
+    }));
+    await assertSucceeds(getDoc(entry));
+    await assertSucceeds(updateDoc(entry, { hours: 5 }));
+    await assertFails(updateDoc(entry, { date: '2026-10-13' }));
+  });
+
+  it('a normal publisher cannot create pioneer calendar entries', async () => {
+    await assertFails(setDoc(doc(as('user1'), 'serviceEntries/user1/entries/2026-10-12'), {
+      uid: 'user1',
+      date: '2026-10-12',
+      monthKey: '2026-10',
+      hours: 2,
+      bibleStudies: 0,
+    }));
+  });
+
+  it('one person cannot read another person’s calendar entries', async () => {
+    await assertFails(getDoc(doc(as('user1'), 'serviceEntries/user2/entries/2026-10-12')));
   });
 });
 
