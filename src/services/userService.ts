@@ -102,14 +102,19 @@ export async function updateMyProfile(
     role: next.role === 'admin' ? 'admin' : 'user',
     active: next.active === true,
     qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
-    reportingType: next.reportingType === 'baptized_publisher' || next.reportingType === 'auxiliary_pioneer' || next.reportingType === 'regular_pioneer'
-      ? next.reportingType
-      : 'publisher',
   };
 
   const batch = firestore().batch();
   batch.update(users().doc(uid), { ...patch, updatedAt: now() });
-  batch.set(publicPeople().doc(uid), publicData, { merge: true });
+  batch.set(
+    publicPeople().doc(uid),
+    {
+      ...publicData,
+      // Remove the old public reportingType field if it exists.
+      reportingType: firestore.FieldValue.delete(),
+    },
+    { merge: true },
+  );
   return commit(batch.commit());
 }
 
@@ -199,14 +204,19 @@ export async function updateUserByAdmin(uid: string, patch: AdminUserPatch): Pro
     role: next.role === 'admin' ? 'admin' : 'user',
     active: next.active === true,
     qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
-    reportingType: next.reportingType === 'baptized_publisher' || next.reportingType === 'auxiliary_pioneer' || next.reportingType === 'regular_pioneer'
-      ? next.reportingType
-      : 'publisher',
   };
 
   const batch = firestore().batch();
   batch.update(users().doc(uid), data);
-  batch.set(publicPeople().doc(uid), publicData, { merge: true });
+  batch.set(
+    publicPeople().doc(uid),
+    {
+      ...publicData,
+      // Remove the old public reportingType field if it exists.
+      reportingType: firestore.FieldValue.delete(),
+    },
+    { merge: true },
+  );
   return commit(batch.commit());
 }
 
@@ -228,9 +238,6 @@ export function subscribeToPublicPeople(
               role: d.data().role === 'admin' ? 'admin' : 'user',
               active: d.data().active === true,
               qualifications: Array.isArray(d.data().qualifications) ? d.data().qualifications : [],
-              reportingType: d.data().reportingType === 'baptized_publisher' || d.data().reportingType === 'auxiliary_pioneer' || d.data().reportingType === 'regular_pioneer'
-                ? d.data().reportingType
-                : 'publisher',
             }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         ),
@@ -249,7 +256,8 @@ export async function syncPublicPeople(list: UserProfile[]): Promise<void> {
       role: u.role,
       active: u.active,
       qualifications: u.qualifications,
-      reportingType: u.reportingType,
+      // Remove the old public reportingType field if it exists.
+      reportingType: firestore.FieldValue.delete(),
     }, { merge: true });
   }
   await batch.commit();
