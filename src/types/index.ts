@@ -1,152 +1,292 @@
-import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
-import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
-
-initializeApp();
-const db = getFirestore();
+export type Role = 'admin' | 'user';
+export type ResponseStatus = 'seen' | 'cannot_do';
+export type AssignmentStatus = 'scheduled' | 'cancelled';
+/** What one person sees for one assignment. */
+export type DisplayStatus = 'scheduled' | 'seen' | 'cannot_do' | 'cancelled';
 
 /**
- * OPTIONAL. The only server-side code in CSHARE.
- *
- * Phones already sync by themselves when they get internet (background sync, every ~15+ min).
- * This function makes it INSTANT: when an assignment changes it sends a silent "data only"
- * push to the people involved. Their app wakes up, reads the latest assignments and schedules
- * the reminders right away (and shows "New assignment"). Needs the Firebase Blaze plan.
- *
- * Reminders themselves are never sent from here: each phone schedules them locally,
- * so they still ring with no internet and with the app closed.
+ * The ONLY congregation qualifications CSHARE tracks. Every assignment type that needs a
+ * qualification needs one of these (see AssignmentType.requiredRole).
+ * A person can hold one or two at once: a "base" standing (publisher OR baptized_publisher)
+ * plus, optionally, one appointed privilege (ministerial_servant OR elder).
  */
+export type PrivilegeRole = 'publisher' | 'baptized_publisher' | 'ministerial_servant' | 'elder';
 
-interface AssignmentDoc {
-  title?: string;
-  date?: string;
-  startTime?: string;
-  status?: string;
-  assigneeIds?: string[];
-  assigneeNames?: Record<string, string>;
-  responses?: Record<string, { status?: string; adminId?: string }>;
+/**
+ * How a person reports their field service each month. Independent of PrivilegeRole above —
+ * a ministerial servant can be a "publisher" reporting-wise, an unbaptized publisher can be an
+ * "auxiliary_pioneer", and so on. Set by an administrator, one per person.
+ */
+export type ReportingType = 'publisher' | 'baptized_publisher' | 'auxiliary_pioneer' | 'regular_pioneer';
+
+export interface NotificationPreferences {
+  reminders: boolean;
+  callStyle: boolean;
 }
 
-async function tokensFor(uids: string[]): Promise<string[]> {
-  const tokens = new Set<string>();
-  for (let i = 0; i < uids.length; i += 10) {
-    const snap = await db.collection('users').where('__name__', 'in', uids.slice(i, i + 10)).get();
-    snap.forEach(d => {
-      if (d.get('active') === true) (d.get('fcmTokens') ?? []).forEach((t: string) => tokens.add(t));
-    });
-  }
-  return Array.from(tokens);
+/** A family member with no phone / no account of their own (e.g. a child). */
+export interface Dependent {
+  id: string;
+  name: string;
 }
 
-/** Data-only, high priority: delivered to the app even when it is closed. */
-async function push(uids: string[], data: Record<string, string>): Promise<void> {
-  if (uids.length === 0) return;
-  const tokens = await tokensFor(uids);
-  for (let i = 0; i < tokens.length; i += 500) {
-    await getMessaging().sendEachForMulticast({ tokens: tokens.slice(i, i + 500), data, android: { priority: 'high' } });
-  }
-}
-
-const fingerprint = (a?: AssignmentDoc) =>
-  JSON.stringify([a?.title, a?.date, a?.startTime, a?.status, [...(a?.assigneeIds ?? [])].sort()]);
-
-export const onAssignmentWritten = onDocumentWritten('assignments/{assignmentId}', async event => {
-  const id = event.params.assignmentId;
-  const before = event.data?.before.data() as AssignmentDoc | undefined;
-  const after = event.data?.after.data() as AssignmentDoc | undefined;
-
-  // Anyone added, removed, or whose part changed: tell their phone to sync now.
-  if (fingerprint(before) !== fingerprint(after)) {
-    const involved = Array.from(new Set([...(before?.assigneeIds ?? []), ...(after?.assigneeIds ?? [])]));
-    await push(involved, { type: 'sync', assignmentId: id });
-  }
-
-  // Someone newly said "I can't do this": a short notice for the administrator they chose (or all).
-  if (!after) return;
-  for (const uid of after.assigneeIds ?? []) {
-    const was = before?.responses?.[uid]?.status;
-    const now = after.responses?.[uid];
-    if (now?.status === 'cannot_do' && was !== 'cannot_do') {
-      const name = after.assigneeNames?.[uid] ?? 'Someone';
-      let adminIds: string[] = now.adminId ? [now.adminId] : [];
-      if (adminIds.length === 0) {
-        const admins = await db.collection('users').where('role', '==', 'admin').where('active', '==', true).get();
-        adminIds = admins.docs.map(d => d.id);
-      }
-      await push(adminIds, {
-        type: 'notify',
-        title: 'CSHARE',
-        body: `${name} can't do ${after.title ?? 'an assignment'} (${after.date ?? ''} ${after.startTime ?? ''}).`.trim(),
-        assignmentId: id,
-      });
-    }
-  }
-});
-
-
-interface ReportDoc {
-  uid?: string;
-  monthKey?: string;
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: Role;
+  active: boolean;
+  /** Can manage the private in-app update controls. Set once by the developer; admins cannot grant this permission. */
+  developer: boolean;
+  /** Whether this administrator may view monthly reports for every ministry group. */
+  secretary: boolean;
+  /** Version last reported by this phone. */
+  appVersion?: string;
+  appVersionCode?: number;
+  lastAppSeenAt?: Date;
+  /** The privilege(s) this person holds: one or two of PrivilegeRole. Set by an administrator only. */
+  qualifications: PrivilegeRole[];
+  /** How this person reports field service each month. Set by an administrator only. */
+  reportingType: ReportingType;
+  /** Which ministry group this person belongs to, if any. Set by an administrator only. */
   groupId?: string;
+  /** Children / family members with no phone of their own. Assignments for them are given under
+   * this account: reminders, calls and the calendar all reach this person's phone instead. */
+  dependents: Dependent[];
+  notificationPreferences: NotificationPreferences;
+  fcmTokens: string[];
+  approvedAt?: Date;
+  lastActiveAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface AssignmentResponse {
+  status: ResponseStatus;
+  at: Date;
+  reason?: string;
+  adminId?: string;
+}
+
+export interface Assignment {
+  id: string;
+  weekId: string;
+  typeId?: string;
+  /** the minimum privilege required to do this assignment, if any */
+  requiredRole?: PrivilegeRole;
+  icon?: string;
+  meeting?: Meeting;
+  title: string;
+  description: string;
+  category: string;
+  location: string;
+  /** YYYY-MM-DD (local) */
+  date: string;
+  /** HH:mm (24h, local) */
+  startTime: string;
+  endTime?: string;
+  startAt: Date;
+  assigneeIds: string[];
+  /** uid -> name, so people can see who else is assigned without reading other profiles */
+  assigneeNames: Record<string, string>;
+  /** ids inside assigneeIds that are actually a CHILD of that account (no phone of their own):
+   * assigneeNames holds the child's name, but reminders/calls/calendar still go to this adult. */
+  childAssignees: string[];
+  requiresQualification: boolean;
+  status: AssignmentStatus;
+  /** uid -> that person's response (seen / cannot_do) */
+  responses: Record<string, AssignmentResponse>;
+  reminderOffsetsMinutes: number[];
+  sortOrder: number;
+  createdBy: string;
+  updatedBy: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type AssignmentInput = Pick<
+  Assignment,
+  | 'typeId'
+  | 'requiredRole'
+  | 'icon'
+  | 'meeting'
+  | 'title'
+  | 'description'
+  | 'category'
+  | 'location'
+  | 'date'
+  | 'startTime'
+  | 'endTime'
+  | 'assigneeIds'
+  | 'assigneeNames'
+  | 'childAssignees'
+  | 'requiresQualification'
+  | 'reminderOffsetsMinutes'
+  | 'sortOrder'
+>;
+
+export type RowKind = 'part' | 'song' | 'note';
+/** A week has two meetings, each with its own sheet. */
+export type Meeting = 'midweek' | 'weekend';
+
+/** One line of the weekly meeting sheet. */
+export interface ProgramRow {
+  /** stable inside a week: the assignment type id, or "x..." for a row added by hand */
+  id: string;
+  typeId?: string;
+  /** the minimum privilege required for this part, if any */
+  requiredRole?: PrivilegeRole;
+  kind: RowKind;
+  section: string;
+  /** what the type is called, e.g. "Bible Akenkan" */
+  label: string;
+  /** what this week's part is called (editable) */
+  title: string;
+  icon: string;
+  minutes: number;
+  numbered: boolean;
+  requiresQualification: boolean;
+  /** several people can share this part */
+  multiple: boolean;
+  /** how many people it usually has */
+  people: number;
+  assigneeIds: string[];
+  assigneeNames: Record<string, string>;
+  /** ids inside assigneeIds that stand in for that account's child (no phone of their own) */
+  childAssignees: string[];
+  /** song number (songs only) */
+  number?: string;
+  /** filled in by scheduleRows */
+  startTime?: string;
+  endTime?: string;
+}
+
+/** The sheet of one meeting (midweek or weekend). */
+export interface MeetingSheet {
+  /** the reading / heading, e.g. "YEREMIA 36-37" */
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  startTime: string;
+  program: ProgramRow[];
+}
+
+export interface Week {
+  id: string; // Monday's date, YYYY-MM-DD
+  sheets: Partial<Record<Meeting, MeetingSheet>>;
+  startDate: string;
+  endDate: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface AssignmentType {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  requiresQualification: boolean;
+  allowsMultipleAssignees: boolean;
+  active: boolean;
+  sortOrder: number;
+  /** part = has people, song = has a number, note = just a line (e.g. opening comments) */
+  kind: RowKind;
+  minutes: number;
+  /** how many people the part usually has */
+  people: number;
+  /** shown with a number (1, 2, 3 ...) on the sheet */
+  numbered: boolean;
+  icon: string;
+  /** which meeting's sheet this line belongs to */
+  meeting: Meeting;
+  /** the minimum privilege required for this part, if any (see PrivilegeRole) */
+  requiredRole?: PrivilegeRole;
+}
+
+export interface AppUpdateConfig {
+  available: boolean;
+  versionName: string;
+  versionCode: number;
+  url: string;
+  message: string;
+  updatedAt?: Date;
+}
+
+export interface AppSettings {
+  categories: string[];
+  reminderOffsetsMinutes: number[];
+  callStyleEnabled: boolean;
+  /** 0 = Sunday ... 6 = Saturday */
+  meetingDay: number;
+  meetingTime: string;
+  /** how minutes are written on the sheet, {n} is the number: "{n} min", "Simma {n}" ... */
+  minutesFormat: string;
+  /** 0 = Sunday ... 6 = Saturday */
+  weekendDay: number;
+  weekendTime: string;
+  midweekName: string;
+  weekendName: string;
+  /** Hour references for the monthly report — entering more is always allowed, never a cap.
+   * Kept configurable so a congregation-wide adjustment (e.g. a different auxiliary
+   * arrangement for a given period) doesn't need a code change. */
+  regularPioneerHours: number;
+  auxiliaryPioneerHours: number;
+}
+
+export type PeopleFilter = 'everyone' | 'admins' | 'waiting' | 'inactive';
+
+// ------------------------------------------------------------------ monthly field service reports
+
+/** One person's report for one calendar month. Doc id is always `${uid}_${monthKey}`, which is
+ * what stops an accidental duplicate report from ever existing for the same person/month. */
+export interface MonthlyReport {
+  id: string;
+  uid: string;
+  /** YYYY-MM */
+  monthKey: string;
+  /** captured at submission time, so later profile changes do not rewrite this report. */
+  reportingType: ReportingType;
+  /** Ministry group at the time the report was submitted. */
+  groupId?: string;
+  /** Member name captured at submission time for group reports. */
   reporterName?: string;
-  reportingType?: string;
+  /** Publisher / Baptized Publisher: did they share in the ministry this month? */
   participated?: boolean;
+  /** Auxiliary Pioneer / Regular Pioneer only. Entering more than the reference hours is fine —
+   * the reference is a minimum, never treated as a cap. */
   hours?: number;
   bibleStudies?: number;
+  createdBy: string;
+  submittedAt?: Date;
+  updatedAt?: Date;
 }
 
-/** Alerts the assigned group overseer when a report is created or corrected. */
-export const onReportWritten = onDocumentWritten('reports/{reportId}', async event => {
-  const before = event.data?.before.data() as ReportDoc | undefined;
-  const report = event.data?.after.data() as ReportDoc | undefined;
+export type MonthlyReportInput = Pick<MonthlyReport, 'reportingType' | 'participated' | 'hours' | 'bibleStudies'>;
 
-  if (!report?.groupId) return;
+/** One field-service activity entered during the month by an auxiliary/regular pioneer. */
+export interface FieldServiceEntry {
+  id: string;
+  uid: string;
+  /** YYYY-MM-DD, local phone date. */
+  date: string;
+  /** YYYY-MM. */
+  monthKey: string;
+  hours: number;
+  bibleStudies: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
-  // Ignore writes that do not change the actual report.
-  const changed = JSON.stringify([
-    before?.uid,
-    before?.monthKey,
-    before?.groupId,
-    before?.reporterName,
-    before?.reportingType,
-    before?.participated,
-    before?.hours,
-    before?.bibleStudies,
-  ]) !== JSON.stringify([
-    report.uid,
-    report.monthKey,
-    report.groupId,
-    report.reporterName,
-    report.reportingType,
-    report.participated,
-    report.hours,
-    report.bibleStudies,
-  ]);
 
-  if (!changed) return;
+// ------------------------------------------------------------------ ministry groups
 
-  const groupSnap = await db.collection('groups').doc(report.groupId).get();
-  if (!groupSnap.exists) return;
-
-  const overseerId = groupSnap.get('overseerId') as string | undefined;
-  if (!overseerId || overseerId === report.uid) return;
-
-  const name = report.reporterName ?? 'A member';
-  const month = report.monthKey ?? 'this month';
-  const detail = report.hours !== undefined
-    ? `${report.hours} hours${report.bibleStudies !== undefined ? `, ${report.bibleStudies} Bible studies` : ''}`
-    : report.participated === true
-      ? `had a part in the ministry${report.bibleStudies !== undefined ? ` and recorded ${report.bibleStudies} Bible studies` : ''}`
-      : 'did not have a part in the ministry';
-
-  const edited = !!before ? 'updated' : 'submitted';
-
-  await push([overseerId], {
-    type: 'notify',
-    title: before ? 'Group report updated' : 'New group report',
-    body: `${name} ${edited} their ${month} report: ${detail}.`,
-    groupId: report.groupId,
-    reportId: event.params.reportId,
-  });
-});
+export interface MinistryGroup {
+  id: string;
+  name: string;
+  /** uid of the group overseer, if assigned */
+  overseerId?: string;
+  sortOrder: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
