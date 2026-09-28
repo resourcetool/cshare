@@ -30,6 +30,16 @@ export interface Dependent {
   name: string;
 }
 
+export interface PublicPerson {
+  id: string;
+  name: string;
+  phone: string;
+  role: Role;
+  active: boolean;
+  qualifications: PrivilegeRole[];
+  reportingType: ReportingType;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
