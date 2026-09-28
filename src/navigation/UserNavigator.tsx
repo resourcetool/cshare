@@ -9,6 +9,7 @@ import AssignmentDetailScreen from '../screens/shared/AssignmentDetailScreen';
 import CantDoScreen from '../screens/shared/CantDoScreen';
 import MyReportScreen from '../screens/shared/MyReportScreen';
 import GroupReportScreen from '../screens/shared/GroupReportScreen';
+import PeopleDirectoryScreen from '../screens/shared/PeopleDirectoryScreen';
 import { UserStackParams, UserTabParams } from './types';
 import { tabScreenOptions, stackScreenOptions } from './options';
 import { useTheme } from '../context/ThemeContext';
@@ -40,6 +41,7 @@ export default function UserNavigator() {
       <Stack.Screen name="ContactAdmin" component={ContactAdminScreen} options={{ title: 'Contact admin' }} />
       <Stack.Screen name="MyReport" component={MyReportScreen} options={{ title: 'My Monthly Report' }} />
       <Stack.Screen name="GroupReport" component={GroupReportScreen} options={{ title: 'Group Monthly Report' }} />
+      <Stack.Screen name="People" component={PeopleDirectoryScreen} options={{ title: 'People' }} />
     </Stack.Navigator>
   );
 }

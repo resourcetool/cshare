@@ -18,6 +18,7 @@ export type SharedStackParams = {
 
 export type UserStackParams = SharedStackParams & {
   UserTabs: undefined;
+  People: undefined;
 };
 
 export type AdminStackParams = SharedStackParams & {
