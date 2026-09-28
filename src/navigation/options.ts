@@ -3,17 +3,28 @@ import type { NativeStackNavigationOptions } from '@react-navigation/native-stac
 import { Palette } from '../theme';
 
 export const tabScreenOptions = (palette: Palette): BottomTabNavigationOptions => ({
-  headerStyle: { backgroundColor: palette.surface },
-  headerTitleStyle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  headerStyle: { backgroundColor: palette.surface, elevation: 0, shadowOpacity: 0 },
+  headerTitleStyle: { fontSize: 18, fontWeight: '700', color: palette.ink },
+  headerShadowVisible: false,
   tabBarActiveTintColor: palette.primary,
   tabBarInactiveTintColor: palette.muted,
-  tabBarStyle: { height: 72, paddingTop: 6, backgroundColor: palette.surface, borderTopColor: palette.line },
-  tabBarLabelStyle: { fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  tabBarStyle: {
+    height: 66,
+    paddingTop: 6,
+    paddingBottom: 7,
+    backgroundColor: palette.surface,
+    borderTopWidth: 1,
+    borderTopColor: palette.line,
+    elevation: 8,
+  },
+  tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 1 },
+  tabBarItemStyle: { paddingVertical: 1 },
 });
 
 export const stackScreenOptions = (palette: Palette): NativeStackNavigationOptions => ({
   headerStyle: { backgroundColor: palette.surface },
   headerTintColor: palette.primary,
-  headerTitleStyle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  headerTitleStyle: { fontSize: 18, fontWeight: '700', color: palette.ink },
+  headerShadowVisible: false,
   contentStyle: { backgroundColor: palette.bg },
 });

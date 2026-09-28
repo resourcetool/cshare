@@ -26,11 +26,11 @@ function AdminTabs() {
   const { palette } = useTheme();
   return (
     <Tab.Navigator screenOptions={tabScreenOptions(palette)}>
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'CSHARE', tabBarLabel: 'Dashboard', tabBarIcon: tabIcon('🏠') }} />
-      <Tab.Screen name="Week" component={WeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('📅') }} />
-      <Tab.Screen name="People" component={PeopleScreen} options={{ title: 'People', tabBarLabel: 'People', tabBarIcon: tabIcon('👥') }} />
-      <Tab.Screen name="Report" component={MyReportScreen} options={{ title: 'My Monthly Report', tabBarLabel: 'Report', tabBarIcon: tabIcon('📝') }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings', tabBarLabel: 'Settings', tabBarIcon: tabIcon('⚙️') }} />
+      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'CSHARE', tabBarLabel: 'Dashboard', tabBarIcon: tabIcon('home') }} />
+      <Tab.Screen name="Week" component={WeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('calendar') }} />
+      <Tab.Screen name="People" component={PeopleScreen} options={{ title: 'People', tabBarLabel: 'People', tabBarIcon: tabIcon('people') }} />
+      <Tab.Screen name="Report" component={MyReportScreen} options={{ title: 'My Monthly Report', tabBarLabel: 'Report', tabBarIcon: tabIcon('report') }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings', tabBarLabel: 'Settings', tabBarIcon: tabIcon('settings') }} />
     </Tab.Navigator>
   );
 }

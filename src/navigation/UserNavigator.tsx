@@ -21,11 +21,11 @@ function UserTabs() {
   const { palette } = useTheme();
   return (
     <Tab.Navigator screenOptions={tabScreenOptions(palette)}>
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home', tabBarIcon: tabIcon('🏠') }} />
-      <Tab.Screen name="MyWeek" component={MyWeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('📅') }} />
-      <Tab.Screen name="Report" component={MyReportScreen} options={{ title: 'My Monthly Report', tabBarLabel: 'Report', tabBarIcon: tabIcon('📝') }} />
-      <Tab.Screen name="Contact" component={ContactAdminScreen} options={{ title: 'Contact admin', tabBarLabel: 'Contact', tabBarIcon: tabIcon('📞') }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Settings', tabBarLabel: 'Settings', tabBarIcon: tabIcon('⚙️') }} />
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home', tabBarIcon: tabIcon('home') }} />
+      <Tab.Screen name="MyWeek" component={MyWeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('calendar') }} />
+      <Tab.Screen name="Report" component={MyReportScreen} options={{ title: 'My Monthly Report', tabBarLabel: 'Report', tabBarIcon: tabIcon('report') }} />
+      <Tab.Screen name="Contact" component={ContactAdminScreen} options={{ title: 'Contact admin', tabBarLabel: 'Contact', tabBarIcon: tabIcon('phone') }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Settings', tabBarLabel: 'Settings', tabBarIcon: tabIcon('settings') }} />
     </Tab.Navigator>
   );
 }
