@@ -9,6 +9,7 @@ import PersonEditScreen from '../screens/admin/PersonEditScreen';
 import TypeEditScreen from '../screens/admin/TypeEditScreen';
 import GroupsScreen from '../screens/admin/GroupsScreen';
 import GroupEditScreen from '../screens/admin/GroupEditScreen';
+import EmergencyEmailScreen from '../screens/admin/EmergencyEmailScreen';
 import ContactAdminScreen from '../screens/user/ContactAdminScreen';
 import AssignmentDetailScreen from '../screens/shared/AssignmentDetailScreen';
 import CantDoScreen from '../screens/shared/CantDoScreen';
@@ -44,6 +45,7 @@ export default function AdminNavigator() {
       <Stack.Screen name="TypeEdit" component={TypeEditScreen} options={{ title: 'Assignment type' }} />
       <Stack.Screen name="Groups" component={GroupsScreen} options={{ title: 'Ministry groups' }} />
       <Stack.Screen name="GroupEdit" component={GroupEditScreen} options={{ title: 'Group' }} />
+      <Stack.Screen name="EmergencyEmail" component={EmergencyEmailScreen} options={{ title: 'Emergency email' }} />
       <Stack.Screen name="AssignmentDetail" component={AssignmentDetailScreen} options={{ title: 'My assignment' }} />
       <Stack.Screen name="CantDo" component={CantDoScreen} options={{ title: "I can't do this" }} />
       <Stack.Screen name="ContactAdmin" component={ContactAdminScreen} options={{ title: 'Contact admin' }} />

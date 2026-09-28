@@ -26,6 +26,7 @@ export type AdminStackParams = SharedStackParams & {
   TypeEdit: { typeId?: string } | undefined;
   Groups: undefined;
   GroupEdit: { groupId?: string } | undefined;
+  EmergencyEmail: undefined;
 };
 
 export type UserTabParams = {
