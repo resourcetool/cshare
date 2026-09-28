@@ -13,6 +13,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { Icon, IconName, iconNameForLegacy } from './Icon';
 import { Palette, radius, space, TextStyles, TOUCH } from '../theme';
 import { Tone } from '../utils/status';
 
@@ -47,9 +48,10 @@ interface ButtonProps {
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
+  icon?: IconName;
 }
 
-export function Button({ label, onPress, variant = 'primary', loading, disabled, style }: ButtonProps) {
+export function Button({ label, onPress, variant = 'primary', loading, disabled, style, icon }: ButtonProps) {
   const { s, palette } = useStyles();
   const off = disabled || loading;
   const fg = variant === 'primary' || variant === 'danger' ? palette.onPrimary : palette.primary;
@@ -73,9 +75,12 @@ export function Button({ label, onPress, variant = 'primary', loading, disabled,
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <Text style={[s.buttonText, { color: fg }]} maxFontSizeMultiplier={1.4}>
-          {label}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          {icon ? <Icon name={icon} size={18} color={fg} /> : null}
+          <Text style={[s.buttonText, { color: fg }]} maxFontSizeMultiplier={1.4}>
+            {label}
+          </Text>
+        </View>
       )}
     </Pressable>
   );
@@ -133,9 +138,14 @@ export function Notice({ tone = 'info', message, actionLabel, onAction }: {
   const t = tones(palette)[tone];
   return (
     <View style={[s.notice, { backgroundColor: t.bg }]} accessibilityLiveRegion="polite">
-      <Text style={[text.body, { color: t.fg }]} maxFontSizeMultiplier={1.5}>
-        {message}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
+        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: palette.surface, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={tone === 'warn' || tone === 'bad' ? 'attention' : 'report'} size={16} color={t.fg} />
+        </View>
+        <Text style={[text.body, { color: t.fg, flex: 1 }]} maxFontSizeMultiplier={1.5}>
+          {message}
+        </Text>
+      </View>
       {actionLabel && onAction ? <Button label={actionLabel} onPress={onAction} variant="secondary" style={{ marginTop: space.sm }} /> : null}
     </View>
   );
@@ -215,7 +225,7 @@ export function TextField({
             onPress={() => setVisible(v => !v)}
             style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ fontSize: 20, color: palette.muted }}>{'👁'}</Text>
+            <Icon name="eye" size={20} color={palette.muted} />
           </Pressable>
         ) : null}
       </View>
@@ -225,7 +235,7 @@ export function TextField({
   );
 }
 
-export function Chip({ label, selected, onPress, disabled }: { label: string; selected?: boolean; onPress: () => void; disabled?: boolean }) {
+export function Chip({ label, selected, onPress, disabled, icon }: { label: string; selected?: boolean; onPress: () => void; disabled?: boolean; icon?: IconName }) {
   const { s, text, palette } = useStyles();
   return (
     <Pressable
@@ -235,9 +245,10 @@ export function Chip({ label, selected, onPress, disabled }: { label: string; se
       onPress={onPress}
       disabled={disabled}
       style={[s.chip, selected && { backgroundColor: palette.primary, borderColor: palette.primary }, disabled && { opacity: 0.5 }]}>
-      <Text style={[text.body, { color: selected ? palette.onPrimary : palette.ink }]} maxFontSizeMultiplier={1.4}>
-        {label}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: label ? 7 : 0 }}>
+        {icon ? <Icon name={icon} size={18} color={selected ? palette.onPrimary : palette.primary} /> : null}
+        {label ? <Text style={[text.body, { color: selected ? palette.onPrimary : palette.ink, fontSize: 14 }]} maxFontSizeMultiplier={1.4}>{label}</Text> : null}
+      </View>
     </Pressable>
   );
 }
@@ -273,14 +284,15 @@ export function SwitchRow({ label, description, value, onValueChange, disabled }
   );
 }
 
-export function IconBadge({ icon, size = 44, tint }: { icon: string; size?: number; tint?: string }) {
+export function IconBadge({ icon, size = 42, tint }: { icon: string; size?: number; tint?: string }) {
   const { palette } = useTheme();
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: tint ?? palette.primarySoft, alignItems: 'center', justifyContent: 'center' }} accessibilityElementsHidden importantForAccessibility="no">
-      <Text style={{ fontSize: size * 0.5 }}>{icon}</Text>
+    <View style={{ width: size, height: size, borderRadius: radius.md, backgroundColor: tint ?? palette.primarySoft, alignItems: 'center', justifyContent: 'center' }} accessibilityElementsHidden importantForAccessibility="no">
+      <Icon name={iconNameForLegacy(icon)} size={size * 0.5} color={palette.primary} />
     </View>
   );
 }
+
 
 /** − 7 min +  */
 export function Stepper({ label, value, onChange, min = 0, max = 60, suffix = '' }: {
@@ -313,15 +325,15 @@ export function SectionTitle({ children }: { children: React.ReactNode }) {
 function makeStyles(palette: Palette) {
   return StyleSheet.create({
     button: { minHeight: TOUCH, borderRadius: radius.md, paddingHorizontal: space.lg, alignItems: 'center', justifyContent: 'center' },
-    buttonText: { fontSize: 18, fontWeight: '700' },
+    buttonText: { fontSize: 15, fontWeight: '700' },
     card: { backgroundColor: palette.surface, borderRadius: radius.lg, padding: space.lg, marginBottom: space.md, borderWidth: 1, borderColor: palette.line },
-    badge: { alignSelf: 'flex-start', paddingHorizontal: space.md, paddingVertical: 4, borderRadius: radius.pill },
-    badgeText: { fontSize: 14, fontWeight: '700' },
-    notice: { borderRadius: radius.md, padding: space.lg, marginBottom: space.lg },
+    badge: { alignSelf: 'flex-start', paddingHorizontal: space.sm, paddingVertical: 5, borderRadius: radius.pill },
+    badgeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.15 },
+    notice: { borderRadius: radius.md, padding: space.md, marginBottom: space.md },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl },
     empty: { alignItems: 'center', padding: space.xl, marginTop: space.xl },
-    input: { minHeight: TOUCH, borderWidth: 1.5, borderColor: palette.line, borderRadius: radius.md, backgroundColor: palette.surface, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 18, color: palette.ink },
-    chip: { minHeight: 48, paddingHorizontal: space.lg, justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1.5, borderColor: palette.line, backgroundColor: palette.surface, marginRight: space.sm, marginBottom: space.sm },
+    input: { minHeight: TOUCH, borderWidth: 1, borderColor: palette.line, borderRadius: radius.md, backgroundColor: palette.surface, paddingHorizontal: space.md, paddingVertical: space.sm, fontSize: 16, color: palette.ink },
+    chip: { minHeight: 42, paddingHorizontal: space.md, justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.surface, marginRight: space.sm, marginBottom: space.sm },
     chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
     stepper: { flexDirection: 'row', alignItems: 'center' },
     stepBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.primarySoft, alignItems: 'center', justifyContent: 'center' },

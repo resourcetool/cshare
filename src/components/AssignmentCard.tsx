@@ -7,6 +7,7 @@ import { meetsRequiredRole } from '../utils/qualifications';
 import { useTheme } from '../context/ThemeContext';
 import { space } from '../theme';
 import { Badge, Body, Card, Heading, IconBadge, Small } from './ui';
+import { Icon } from './Icon';
 
 interface Props {
   assignment: Assignment;
@@ -41,9 +42,12 @@ export function AssignmentCard({ assignment: a, uid, variant, onPress, usersById
             <Body>{when}</Body>
             {isChild ? <Small style={{ marginTop: space.xs }}>For your child, {a.assigneeNames[uid]}</Small> : null}
           </View>
-          <Badge label={statusLabel(s, 'user')} tone={statusTone(s)} />
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            <Badge label={statusLabel(s, 'user')} tone={statusTone(s)} />
+            <Icon name="arrow-right" size={20} color={palette.muted} />
+          </View>
         </View>
-        {a.location ? <Small style={{ marginTop: space.xs }}>{a.location}</Small> : null}
+        {a.location ? <Small style={{ marginTop: space.sm }}>{a.location}</Small> : null}
         {others.length ? <Small style={{ marginTop: space.xs }}>With {others.join(', ')}</Small> : null}
       </Card>
     );

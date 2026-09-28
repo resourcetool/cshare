@@ -35,7 +35,7 @@ export function WeekNav({ weekId, onChange, minWeekId }: { weekId: string; onCha
         <Button label="Later ▶" variant="secondary" onPress={() => onChange(shiftWeek(weekId, 1))} style={{ flex: 1 }} />
       </View>
       <View style={styles.row}>
-        {Platform.OS === 'android' ? <Button label="📅 Go to a date" variant="ghost" onPress={pickDate} style={{ flex: 1 }} /> : null}
+        {Platform.OS === 'android' ? <Button label="Go to a date" icon="calendar" variant="ghost" onPress={pickDate} style={{ flex: 1 }} /> : null}
         {weekId !== thisWeek ? <Button label="This week" variant="ghost" onPress={() => onChange(thisWeek)} style={{ flex: 1 }} /> : null}
       </View>
     </View>
