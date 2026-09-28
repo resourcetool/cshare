@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { FlatList, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, Pressable, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
@@ -23,23 +23,66 @@ export default function PeopleScreen() {
   const route = useRoute<RouteProp<AdminTabParams, 'People'>>();
   const [filter, setFilter] = useState<PeopleFilter>(route.params?.filter ?? 'everyone');
   const [query, setQuery] = useState('');
+  // Filters are tucked away by default so the list gets the whole screen.
+  const [showFilters, setShowFilters] = useState(false);
   const users = useLive<UserProfile[]>(subscribeToUsers, []);
 
   useEffect(() => {
     if (route.params?.filter) setFilter(route.params.filter);
   }, [route.params?.filter]);
 
-  const rows = filterPeople(users.data ?? [], filter, query);
+  const all = users.data ?? [];
+  const rows = filterPeople(all, filter, query);
+
+  // Total number of people for each filter (ignores the search text).
+  const counts = useMemo(() => {
+    const c = {} as Record<PeopleFilter, number>;
+    FILTERS.forEach(f => {
+      c[f.key] = filterPeople(all, f.key, '').length;
+    });
+    return c;
+  }, [all]);
+
+  const activeLabel = FILTERS.find(f => f.key === filter)?.label ?? 'Everyone';
+  const isFiltered = filter !== 'everyone' || query.trim().length > 0;
+  const summary = isFiltered ? `Showing ${rows.length} of ${all.length} people` : `${all.length} ${all.length === 1 ? 'person' : 'people'} in total`;
 
   return (
     <Screen inTabs scroll={false}>
       <Button label="Ministry groups" variant="secondary" onPress={() => nav.navigate('Groups')} style={{ marginBottom: space.md }} />
       <TextField label="Search" value={query} onChangeText={setQuery} placeholder="Name or phone" />
-      <ChipRow>
-        {FILTERS.map(f => (
-          <Chip key={f.key} label={f.label} selected={filter === f.key} onPress={() => setFilter(f.key)} />
-        ))}
-      </ChipRow>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.xs }}>
+        <Body style={{ fontWeight: '700' }}>{summary}</Body>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={showFilters ? 'Hide filters' : 'Show filters'}
+          accessibilityState={{ expanded: showFilters }}
+          onPress={() => setShowFilters(v => !v)}
+          hitSlop={8}
+          style={{ paddingVertical: space.xs, paddingHorizontal: space.sm }}>
+          <Body style={{ fontWeight: '700' }}>
+            {showFilters ? 'Hide filters ▲' : filter === 'everyone' ? 'Filters ▼' : `Filter: ${activeLabel} ▼`}
+          </Body>
+        </Pressable>
+      </View>
+
+      {showFilters ? (
+        <ChipRow>
+          {FILTERS.map(f => (
+            <Chip
+              key={f.key}
+              label={`${f.label} (${counts[f.key]})`}
+              selected={filter === f.key}
+              onPress={() => {
+                setFilter(f.key);
+                setShowFilters(false);
+              }}
+            />
+          ))}
+        </ChipRow>
+      ) : null}
+
       {users.error ? <Notice tone="warn" message={users.error} /> : null}
       {users.loading && !users.data ? (
         <LoadingView />
