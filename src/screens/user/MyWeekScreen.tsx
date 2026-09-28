@@ -69,19 +69,19 @@ export default function MyWeekScreen() {
 
       <ChipRow>
         <Chip
-          label="📌 My parts"
+          label="My parts"
           selected={view === 'mine'}
           onPress={() => setView('mine')}
         />
 
         <Chip
-          label={`📋 ${settings.midweekName}`}
+          label={settings.midweekName}
           selected={view === 'midweek'}
           onPress={() => setView('midweek')}
         />
 
         <Chip
-          label={`📋 ${settings.weekendName}`}
+          label={settings.weekendName}
           selected={view === 'weekend'}
           onPress={() => setView('weekend')}
         />
