@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
@@ -10,7 +10,7 @@ import { useAppData } from '../../context/AppDataContext';
 import { useLive } from '../../hooks/useLive';
 import { AdminNav } from '../../navigation/types';
 import { subscribeToUpcoming } from '../../services/assignmentService';
-import { subscribeToUsers, syncPublicPeople } from '../../services/userService';
+import { subscribeToUsers } from '../../services/userService';
 import { Assignment, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, space, TOUCH } from '../../theme';
@@ -31,16 +31,6 @@ export default function DashboardScreen() {
   const attention = attentionItems(upcoming.data ?? []);
   const unconfirmed = unconfirmedSoonItems(upcoming.data ?? [], new Date());
   const waiting = (users.data ?? []).filter(isWaiting);
-  const publicPeopleSynced = useRef(false);
-
-  useEffect(() => {
-    if (profile.role !== 'admin' || publicPeopleSynced.current || !users.data) return;
-    publicPeopleSynced.current = true;
-    syncPublicPeople(users.data).catch(() => {
-      // The normal admin People/update paths will retry individual public records.
-      publicPeopleSynced.current = false;
-    });
-  }, [profile.role, users.data]);
 
   const tiles: { icon: string; label: string; onPress: () => void; wide?: boolean }[] = [
     { icon: '🗓️', label: 'Planner: weeks ahead', wide: true, onPress: () => nav.navigate('Week', { planner: true }) },
