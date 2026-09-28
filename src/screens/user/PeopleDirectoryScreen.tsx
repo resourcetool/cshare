@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, View } from 'react-native';
-
 import { Screen } from '../../components/Screen';
 import {
   Badge,
@@ -14,92 +13,78 @@ import {
   Small,
   TextField,
 } from '../../components/ui';
-
 import { useLive } from '../../hooks/useLive';
 import { subscribeToPublicPeople } from '../../services/userService';
-import { PublicPerson } from '../../types';
+import { PublicPerson, PrivilegeRole } from '../../types';
 import { space } from '../../theme';
 import { rolesLabel } from '../../utils/qualifications';
 
-type PeopleFilter =
-  | 'everyone'
-  | 'publisher'
-  | 'baptized_publisher'
-  | 'ministerial_servant'
-  | 'elder';
+type Filter = 'all' | PrivilegeRole;
 
-const FILTERS: { key: PeopleFilter; label: string }[] = [
-  { key: 'everyone', label: 'Everyone' },
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'Everyone' },
   { key: 'publisher', label: 'Publisher' },
   { key: 'baptized_publisher', label: 'Baptized' },
-  { key: 'ministerial_servant', label: 'Ministerial Servant' },
+  { key: 'ministerial_servant', label: 'Ministerial' },
   { key: 'elder', label: 'Elder' },
 ];
 
-export default function PeopleDirectoryScreen() {
-  const [filter, setFilter] = useState<PeopleFilter>('everyone');
-  const [query, setQuery] = useState('');
+function matchesQualification(person: PublicPerson, filter: Filter): boolean {
+  if (filter === 'all') return true;
+  return person.qualifications.includes(filter);
+}
 
+export default function PeopleDirectoryScreen() {
   const people = useLive<PublicPerson[]>(subscribeToPublicPeople, []);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+
+  const list = people.data ?? [];
 
   const rows = useMemo(() => {
-    const list = people.data ?? [];
-    const search = query.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
 
     return list.filter(person => {
-      const matchesSearch =
-        !search ||
-        person.name.toLowerCase().includes(search) ||
-        person.phone.toLowerCase().includes(search);
-
-      if (!matchesSearch) return false;
-
-      if (filter === 'everyone') return true;
-
-      return person.qualifications?.includes(filter);
+      if (!matchesQualification(person, filter)) return false;
+      if (!q) return true;
+      return `${person.name} ${person.phone}`.toLowerCase().includes(q);
     });
-  }, [people.data, query, filter]);
+  }, [list, query, filter]);
 
-  const totalPeople = people.data?.length ?? 0;
-
-  const administrators =
-    people.data?.filter(person => person.role === 'admin').length ?? 0;
+  const adminCount = list.filter(person => person.role === 'admin').length;
 
   return (
-    <Screen inTabs scroll={false}>
+    <Screen scroll={false}>
       <Notice
         tone="warn"
-        message="STRICT PRIVACY NOTICE: The information displayed here is for authorized congregation use only. Do NOT share, forward, copy, publish, screenshot, or disclose another person's name, phone number, enrollment, qualification, or other personal information without proper authorization. Treat everyone's personal information as confidential."
+        message="STRICT PRIVACY NOTICE: This information is for authorized congregation use only. Do NOT share, forward, copy, publish, screenshot, or disclose another person's name, phone number, or qualification information without proper authorization."
       />
 
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: space.sm,
-          marginTop: space.md,
-          marginBottom: space.md,
-        }}
-      >
-        <Card style={{ flex: 1 }}>
-          <Small>Total people</Small>
-          <Body style={{ fontSize: 22, fontWeight: '700', marginTop: 4 }}>
-            {totalPeople}
-          </Body>
-        </Card>
+      <Card style={{ marginBottom: space.sm }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ minWidth: '45%' }}>
+            <Small>Total people</Small>
+            <Body style={{ fontWeight: '700' }}>{list.length}</Body>
+          </View>
 
-        <Card style={{ flex: 1 }}>
-          <Small>Administrators</Small>
-          <Body style={{ fontSize: 22, fontWeight: '700', marginTop: 4 }}>
-            {administrators}
-          </Body>
-        </Card>
-      </View>
+          <View style={{ minWidth: '45%' }}>
+            <Small>Administrators</Small>
+            <Body style={{ fontWeight: '700' }}>{adminCount}</Body>
+          </View>
+        </View>
+      </Card>
 
       <TextField
         label="Search"
         value={query}
         onChangeText={setQuery}
-        placeholder="Name or phone number"
+        placeholder="Name or phone"
       />
 
       <ChipRow>
@@ -113,9 +98,7 @@ export default function PeopleDirectoryScreen() {
         ))}
       </ChipRow>
 
-      {people.error ? (
-        <Notice tone="warn" message={people.error} />
-      ) : null}
+      {people.error ? <Notice tone="warn" message={people.error} /> : null}
 
       {people.loading && !people.data ? (
         <LoadingView />
@@ -124,19 +107,11 @@ export default function PeopleDirectoryScreen() {
           data={rows}
           keyExtractor={person => person.id}
           style={{ marginTop: space.sm }}
-          contentContainerStyle={{
-            paddingBottom: space.lg,
-          }}
           ListEmptyComponent={
-            <EmptyState
-              title="Nobody here"
-              message="No congregation members match your search or filter."
-            />
+            <EmptyState title="Nobody here" message="No people match." />
           }
           renderItem={({ item: person }) => (
-            <Card
-              accessibilityLabel={`Congregation member ${person.name}`}
-            >
+            <Card accessibilityLabel={person.name}>
               <View
                 style={{
                   flexDirection: 'row',
@@ -144,29 +119,12 @@ export default function PeopleDirectoryScreen() {
                   alignItems: 'flex-start',
                 }}
               >
-                <View
-                  style={{
-                    flex: 1,
-                    paddingRight: space.sm,
-                  }}
-                >
-                  <Body style={{ fontWeight: '700' }}>
-                    {person.name}
-                  </Body>
-
-                  <Small style={{ marginTop: 2 }}>
-                    {person.phone || 'No phone number'}
+                <View style={{ flex: 1, paddingRight: space.sm }}>
+                  <Body style={{ fontWeight: '700' }}>{person.name}</Body>
+                  <Small>{person.phone || 'No phone number'}</Small>
+                  <Small style={{ marginTop: space.xs }}>
+                    {rolesLabel(person.qualifications)}
                   </Small>
-
-                  {person.qualifications?.length ? (
-                    <Small style={{ marginTop: 4 }}>
-                      {rolesLabel(person.qualifications)}
-                    </Small>
-                  ) : (
-                    <Small style={{ marginTop: 4 }}>
-                      No qualification listed
-                    </Small>
-                  )}
                 </View>
 
                 {person.role === 'admin' ? (
