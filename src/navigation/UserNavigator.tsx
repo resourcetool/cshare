@@ -9,7 +9,7 @@ import AssignmentDetailScreen from '../screens/shared/AssignmentDetailScreen';
 import CantDoScreen from '../screens/shared/CantDoScreen';
 import MyReportScreen from '../screens/shared/MyReportScreen';
 import GroupReportScreen from '../screens/shared/GroupReportScreen';
-import PeopleDirectoryScreen from '../screens/shared/PeopleDirectoryScreen';
+import PeopleDirectoryScreen from '../screens/user/PeopleDirectoryScreen';
 import { UserStackParams, UserTabParams } from './types';
 import { tabScreenOptions, stackScreenOptions } from './options';
 import { useTheme } from '../context/ThemeContext';
