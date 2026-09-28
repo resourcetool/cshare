@@ -92,8 +92,8 @@ export async function updateMyProfile(
   patch: { name?: string; phone?: string; notificationPreferences?: NotificationPreferences },
 ): Promise<CommitResult> {
   const current = await users().doc(uid).get();
-  const before = current.data() ?? {};
-  const next = { ...before, ...patch };
+  const before: FT.DocumentData = current.data() ?? {};
+  const next: FT.DocumentData = { ...before, ...patch };
 
   const publicData: PublicPerson = {
     id: uid,
@@ -187,9 +187,9 @@ export interface AdminUserPatch {
 export async function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
   const { approve, ...rest } = patch;
   const current = await users().doc(uid).get();
-  const before = current.data() ?? {};
+  const before: FT.DocumentData = current.data() ?? {};
 
-  const next = {
+  const next: FT.DocumentData = {
     ...before,
     ...rest,
   };
@@ -231,7 +231,7 @@ export function subscribeToPublicPeople(
       snap =>
         onData(
           snap.docs
-            .map(d => ({
+            .map((d): PublicPerson => ({
               id: d.id,
               name: d.data().name ?? '',
               phone: d.data().phone ?? '',
