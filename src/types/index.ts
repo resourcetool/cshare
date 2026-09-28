@@ -37,7 +37,6 @@ export interface PublicPerson {
   role: Role;
   active: boolean;
   qualifications: PrivilegeRole[];
-  reportingType: ReportingType;
 }
 
 export interface UserProfile {
