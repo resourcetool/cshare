@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { confirmAsync } from '../../components/confirm';
 import { Button, Chip, ChipRow, Label, Notice, Stepper, SwitchRow, TextField } from '../../components/ui';
+import { iconNameForLegacy } from '../../components/Icon';
 import { ICONS } from '../../constants';
 import { Meeting, PrivilegeRole, RowKind } from '../../types';
 import { useAppData } from '../../context/AppDataContext';
@@ -107,7 +108,7 @@ export default function TypeEditScreen() {
       <Label style={{ marginBottom: space.sm }}>Icon</Label>
       <ChipRow>
         {ICONS.map(i => (
-          <Chip key={i} label={i} selected={icon === i} onPress={() => setIcon(i)} />
+          <Chip key={i} label="" icon={iconNameForLegacy(i)} selected={icon === i} onPress={() => setIcon(i)} />
         ))}
       </ChipRow>
       <Label style={{ marginBottom: space.sm }}>Which meeting?</Label>

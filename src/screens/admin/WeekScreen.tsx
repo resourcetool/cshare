@@ -215,11 +215,11 @@ export default function WeekScreen() {
 
   return (
     <Screen inTabs>
-      <Button label="🗓️ Planner: see the coming weeks" variant="secondary" onPress={() => setMode('planner')} style={{ marginBottom: space.md }} />
+      <Button label="Planner: see the coming weeks" icon="planner" variant="secondary" onPress={() => setMode('planner')} style={{ marginBottom: space.md }} />
       <WeekNav weekId={weekId} onChange={setWeekId} />
       <ChipRow>
-        <Chip label={`📋 ${settings.midweekName}`} selected={meeting === 'midweek'} onPress={() => setMeeting('midweek')} />
-        <Chip label={`📋 ${settings.weekendName}`} selected={meeting === 'weekend'} onPress={() => setMeeting('weekend')} />
+        <Chip label={settings.midweekName} icon="meeting" selected={meeting === 'midweek'} onPress={() => setMeeting('midweek')} />
+        <Chip label={settings.weekendName} icon="calendar" selected={meeting === 'weekend'} onPress={() => setMeeting('weekend')} />
       </ChipRow>
 
       {notice ? <Notice tone={notice.tone} message={notice.text} /> : null}
