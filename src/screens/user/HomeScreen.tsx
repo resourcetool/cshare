@@ -32,6 +32,16 @@ export default function HomeScreen() {
 
       <AppUpdateNotice />
 
+      <Card onPress={() => nav.navigate('People')} accessibilityLabel="People in the congregation">
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flex: 1, paddingRight: space.sm }}>
+            <Heading>People</Heading>
+            <Small>View congregation members, enrollment and phone numbers</Small>
+          </View>
+          <Badge label="Open" tone="info" />
+        </View>
+      </Card>
+
       {reminderIssue === 'notifications' ? (
         <Notice tone="warn" message="Reminders are off because notifications are turned off for CSHARE." actionLabel="Turn on reminders" onAction={fixReminders} />
       ) : null}
