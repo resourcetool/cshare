@@ -1,10 +1,11 @@
 import firestore, { FirebaseFirestoreTypes as FT } from '@react-native-firebase/firestore';
-import { Dependent, NotificationPreferences, PrivilegeRole, ReportingType, Role, UserProfile } from '../types';
+import { Dependent, NotificationPreferences, PrivilegeRole, PublicPerson, ReportingType, Role, UserProfile } from '../types';
 import { toDate } from '../utils/dates';
 import { APP_VERSION_CODE, APP_VERSION_NAME } from '../config/appVersion';
 import { commit, CommitResult } from './commit';
 
 const users = () => firestore().collection('users');
+const publicPeople = () => firestore().collection('publicPeople');
 const now = () => firestore.FieldValue.serverTimestamp();
 
 export function mapUser(id: string, d: FT.DocumentData): UserProfile {
@@ -86,11 +87,30 @@ export function createProfile(
   );
 }
 
-export function updateMyProfile(
+export async function updateMyProfile(
   uid: string,
   patch: { name?: string; phone?: string; notificationPreferences?: NotificationPreferences },
 ): Promise<CommitResult> {
-  return commit(users().doc(uid).update({ ...patch, updatedAt: now() }));
+  const current = await users().doc(uid).get();
+  const before = current.data() ?? {};
+  const next = { ...before, ...patch };
+
+  const publicData: PublicPerson = {
+    id: uid,
+    name: String(next.name ?? ''),
+    phone: String(next.phone ?? ''),
+    role: next.role === 'admin' ? 'admin' : 'user',
+    active: next.active === true,
+    qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
+    reportingType: next.reportingType === 'baptized_publisher' || next.reportingType === 'auxiliary_pioneer' || next.reportingType === 'regular_pioneer'
+      ? next.reportingType
+      : 'publisher',
+  };
+
+  const batch = firestore().batch();
+  batch.update(users().doc(uid), { ...patch, updatedAt: now() });
+  batch.set(publicPeople().doc(uid), publicData, { merge: true });
+  return commit(batch.commit());
 }
 
 export async function touchLastActive(uid: string): Promise<void> {
@@ -159,11 +179,80 @@ export interface AdminUserPatch {
   approve?: boolean;
 }
 
-export function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
+export async function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
   const { approve, ...rest } = patch;
+  const current = await users().doc(uid).get();
+  const before = current.data() ?? {};
+
+  const next = {
+    ...before,
+    ...rest,
+  };
+
   const data: Record<string, unknown> = { ...rest, updatedAt: now() };
   if (approve) data.approvedAt = now();
-  return commit(users().doc(uid).update(data));
+
+  const publicData: PublicPerson = {
+    id: uid,
+    name: String(next.name ?? ''),
+    phone: String(next.phone ?? ''),
+    role: next.role === 'admin' ? 'admin' : 'user',
+    active: next.active === true,
+    qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
+    reportingType: next.reportingType === 'baptized_publisher' || next.reportingType === 'auxiliary_pioneer' || next.reportingType === 'regular_pioneer'
+      ? next.reportingType
+      : 'publisher',
+  };
+
+  const batch = firestore().batch();
+  batch.update(users().doc(uid), data);
+  batch.set(publicPeople().doc(uid), publicData, { merge: true });
+  return commit(batch.commit());
+}
+
+/** Congregation-visible copy of people. Never contains email, dependents, tokens or private settings. */
+export function subscribeToPublicPeople(
+  onData: (list: PublicPerson[]) => void,
+  onError: (e: unknown) => void,
+): () => void {
+  return publicPeople()
+    .where('active', '==', true)
+    .onSnapshot(
+      snap =>
+        onData(
+          snap.docs
+            .map(d => ({
+              id: d.id,
+              name: d.data().name ?? '',
+              phone: d.data().phone ?? '',
+              role: d.data().role === 'admin' ? 'admin' : 'user',
+              active: d.data().active === true,
+              qualifications: Array.isArray(d.data().qualifications) ? d.data().qualifications : [],
+              reportingType: d.data().reportingType === 'baptized_publisher' || d.data().reportingType === 'auxiliary_pioneer' || d.data().reportingType === 'regular_pioneer'
+                ? d.data().reportingType
+                : 'publisher',
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+      onError,
+    );
+}
+
+/** Admin-only backfill/synchronisation for existing congregation members. */
+export async function syncPublicPeople(list: UserProfile[]): Promise<void> {
+  const batch = firestore().batch();
+  for (const u of list) {
+    batch.set(publicPeople().doc(u.id), {
+      id: u.id,
+      name: u.name,
+      phone: u.phone,
+      role: u.role,
+      active: u.active,
+      qualifications: u.qualifications,
+      reportingType: u.reportingType,
+    }, { merge: true });
+  }
+  await batch.commit();
 }
 
 // ------------------------------------------------------------------ children with no phone
