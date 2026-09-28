@@ -1,11 +1,10 @@
 import firestore, { FirebaseFirestoreTypes as FT } from '@react-native-firebase/firestore';
-import { Dependent, NotificationPreferences, PrivilegeRole, PublicPerson, ReportingType, Role, UserProfile } from '../types';
+import { Dependent, NotificationPreferences, PrivilegeRole, ReportingType, Role, UserProfile } from '../types';
 import { toDate } from '../utils/dates';
 import { APP_VERSION_CODE, APP_VERSION_NAME } from '../config/appVersion';
 import { commit, CommitResult } from './commit';
 
 const users = () => firestore().collection('users');
-const publicPeople = () => firestore().collection('publicPeople');
 const now = () => firestore.FieldValue.serverTimestamp();
 
 export function mapUser(id: string, d: FT.DocumentData): UserProfile {
@@ -87,35 +86,11 @@ export function createProfile(
   );
 }
 
-export async function updateMyProfile(
+export function updateMyProfile(
   uid: string,
   patch: { name?: string; phone?: string; notificationPreferences?: NotificationPreferences },
 ): Promise<CommitResult> {
-  const current = await users().doc(uid).get();
-  const before: FT.DocumentData = current.data() ?? {};
-  const next: FT.DocumentData = { ...before, ...patch };
-
-  const publicData: PublicPerson = {
-    id: uid,
-    name: String(next.name ?? ''),
-    phone: String(next.phone ?? ''),
-    role: next.role === 'admin' ? 'admin' : 'user',
-    active: next.active === true,
-    qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
-  };
-
-  const batch = firestore().batch();
-  batch.update(users().doc(uid), { ...patch, updatedAt: now() });
-  batch.set(
-    publicPeople().doc(uid),
-    {
-      ...publicData,
-      // Remove the old public reportingType field if it exists.
-      reportingType: firestore.FieldValue.delete(),
-    },
-    { merge: true },
-  );
-  return commit(batch.commit());
+  return commit(users().doc(uid).update({ ...patch, updatedAt: now() }));
 }
 
 export async function touchLastActive(uid: string): Promise<void> {
@@ -184,83 +159,11 @@ export interface AdminUserPatch {
   approve?: boolean;
 }
 
-export async function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
+export function updateUserByAdmin(uid: string, patch: AdminUserPatch): Promise<CommitResult> {
   const { approve, ...rest } = patch;
-  const current = await users().doc(uid).get();
-  const before: FT.DocumentData = current.data() ?? {};
-
-  const next: FT.DocumentData = {
-    ...before,
-    ...rest,
-  };
-
   const data: Record<string, unknown> = { ...rest, updatedAt: now() };
   if (approve) data.approvedAt = now();
-
-  const publicData: PublicPerson = {
-    id: uid,
-    name: String(next.name ?? ''),
-    phone: String(next.phone ?? ''),
-    role: next.role === 'admin' ? 'admin' : 'user',
-    active: next.active === true,
-    qualifications: Array.isArray(next.qualifications) ? next.qualifications : [],
-  };
-
-  const batch = firestore().batch();
-  batch.update(users().doc(uid), data);
-  batch.set(
-    publicPeople().doc(uid),
-    {
-      ...publicData,
-      // Remove the old public reportingType field if it exists.
-      reportingType: firestore.FieldValue.delete(),
-    },
-    { merge: true },
-  );
-  return commit(batch.commit());
-}
-
-/** Congregation-visible copy of people. Never contains email, dependents, tokens or private settings. */
-export function subscribeToPublicPeople(
-  onData: (list: PublicPerson[]) => void,
-  onError: (e: unknown) => void,
-): () => void {
-  return publicPeople()
-    .where('active', '==', true)
-    .onSnapshot(
-      snap =>
-        onData(
-          snap.docs
-            .map((d): PublicPerson => ({
-              id: d.id,
-              name: d.data().name ?? '',
-              phone: d.data().phone ?? '',
-              role: d.data().role === 'admin' ? 'admin' : 'user',
-              active: d.data().active === true,
-              qualifications: Array.isArray(d.data().qualifications) ? d.data().qualifications : [],
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        ),
-      onError,
-    );
-}
-
-/** Admin-only backfill/synchronisation for existing congregation members. */
-export async function syncPublicPeople(list: UserProfile[]): Promise<void> {
-  const batch = firestore().batch();
-  for (const u of list) {
-    batch.set(publicPeople().doc(u.id), {
-      id: u.id,
-      name: u.name,
-      phone: u.phone,
-      role: u.role,
-      active: u.active,
-      qualifications: u.qualifications,
-      // Remove the old public reportingType field if it exists.
-      reportingType: firestore.FieldValue.delete(),
-    }, { merge: true });
-  }
-  await batch.commit();
+  return commit(users().doc(uid).update(data));
 }
 
 // ------------------------------------------------------------------ children with no phone
