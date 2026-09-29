@@ -1,298 +1,230 @@
 import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Screen } from '../../components/Screen';
 import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from 'react-native';
-
-import { Screen } from '../../components/ui';
-import {
+  Badge,
+  Body,
   Button,
   Card,
+  Chip,
+  ChipRow,
+  EmptyState,
+  Label,
+  Notice,
   SectionTitle,
-  Text,
+  Small,
+  TextField,
+  Title,
 } from '../../components/ui';
-
 import { Icon } from '../../components/Icon';
-
-import {
-  sendEmergencyEmail,
-  wait,
-  EMAIL_SEND_INTERVAL_MS,
-  EmergencyEmailRecipient,
-} from '../../services/emailService';
-
-import { confirmAsync } from '../../utils/confirmAsync';
-
+import { confirmAsync } from '../../components/confirm';
 import { useLive } from '../../hooks/useLive';
 import { useAppData } from '../../context/AppDataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { subscribeToGroups } from '../../services/groupService';
+import {
+  sendEmergencyEmail,
+  EMAIL_SEND_INTERVAL_MS,
+  wait,
+} from '../../services/emailService';
+import { subscribeToUsers } from '../../services/userService';
+import { MinistryGroup, UserProfile } from '../../types';
+import { space } from '../../theme';
 
-
-type SendMode = 'all' | 'groups' | 'people';
-
-type NoticeTone = 'good' | 'bad' | 'info';
-
-interface Notice {
-  tone: NoticeTone;
-  text: string;
-}
-
+type RecipientMode = 'all' | 'groups' | 'people';
 
 export default function EmergencyEmailScreen() {
-  const { colors } = useTheme();
-  const { users, groups } = useAppData();
+  const { profile } = useAppData();
+  const { palette } = useTheme();
 
-  const [mode, setMode] = useState<SendMode>('all');
+  const users = useLive<UserProfile[]>(subscribeToUsers, []);
+  const groups = useLive<MinistryGroup[]>(subscribeToGroups, []);
 
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+  const [mode, setMode] =
+    useState<RecipientMode>('all');
 
-  const [search, setSearch] = useState('');
+  const [selectedGroups, setSelectedGroups] =
+    useState<string[]>([]);
 
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  const [selectedPeople, setSelectedPeople] =
+    useState<string[]>([]);
 
-  const [sending, setSending] = useState(false);
-  const [progress, setProgress] = useState('');
+  const [personSearch, setPersonSearch] =
+    useState('');
 
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [subject, setSubject] =
+    useState('Emergency notification');
 
+  const [message, setMessage] =
+    useState('');
 
-  /*
-   * --------------------------------------------------------------------------
-   * USERS
-   * --------------------------------------------------------------------------
-   */
+  const [sending, setSending] =
+    useState(false);
 
-  const activeUsers = useMemo(() => {
-    return (users ?? []).filter((user: any) => {
-      return (
-        user?.active !== false &&
-        typeof user?.email === 'string' &&
-        user.email.trim().length > 0
-      );
-    });
-  }, [users]);
+  const [progress, setProgress] =
+    useState(0);
 
+  const [notice, setNotice] = useState<{
+    tone: 'good' | 'bad' | 'warn';
+    text: string;
+  } | null>(null);
 
-  /*
-   * --------------------------------------------------------------------------
-   * SEARCH
-   * --------------------------------------------------------------------------
-   */
+  const activeUsers = useMemo(
+    () =>
+      (users.data ?? []).filter(
+        user =>
+          user.active &&
+          user.email.trim(),
+      ),
+    [users.data],
+  );
 
   const filteredPeople = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query =
+      personSearch.trim().toLowerCase();
 
     if (!query) {
       return activeUsers;
     }
 
-    return activeUsers.filter((user: any) => {
-      const name = String(user?.name ?? '').toLowerCase();
-      const email = String(user?.email ?? '').toLowerCase();
+    return activeUsers.filter(
+      user =>
+        user.name
+          .toLowerCase()
+          .includes(query) ||
+        user.email
+          .toLowerCase()
+          .includes(query),
+    );
+  }, [activeUsers, personSearch]);
 
-      return (
-        name.includes(query) ||
-        email.includes(query)
-      );
-    });
-  }, [activeUsers, search]);
+  const recipients = useMemo(() => {
+    const byId = new Map(
+      activeUsers.map(user => [
+        user.id,
+        user,
+      ]),
+    );
 
+    let list: UserProfile[] = [];
 
-  /*
-   * --------------------------------------------------------------------------
-   * GROUPS
-   * --------------------------------------------------------------------------
-   */
-
-  const availableGroups = useMemo(() => {
-    return groups ?? [];
-  }, [groups]);
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * TOGGLE GROUP
-   * --------------------------------------------------------------------------
-   */
-
-  function toggleGroup(groupId: string) {
-    setSelectedGroups(current => {
-      if (current.includes(groupId)) {
-        return current.filter(id => id !== groupId);
-      }
-
-      return [...current, groupId];
-    });
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * TOGGLE PERSON
-   * --------------------------------------------------------------------------
-   */
-
-  function togglePerson(userId: string) {
-    setSelectedPeople(current => {
-      if (current.includes(userId)) {
-        return current.filter(id => id !== userId);
-      }
-
-      return [...current, userId];
-    });
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * BUILD RECIPIENT LIST
-   * --------------------------------------------------------------------------
-   */
-
-  const recipients = useMemo<EmergencyEmailRecipient[]>(() => {
-    let selectedUsers: any[] = [];
-
-    /*
-     * Entire congregation
-     */
     if (mode === 'all') {
-      selectedUsers = [...activeUsers];
-    }
+      list = activeUsers;
+    } else if (mode === 'groups') {
+      const groupIds =
+        new Set(selectedGroups);
 
-    /*
-     * Selected groups
-     */
-    if (mode === 'groups') {
-      selectedUsers = activeUsers.filter((user: any) => {
-        const userGroupId =
-          user?.groupId ??
-          user?.groupID ??
-          user?.group;
-
-        return (
-          userGroupId &&
-          selectedGroups.includes(String(userGroupId))
-        );
-      });
-    }
-
-    /*
-     * Selected individual people
-     */
-    if (mode === 'people') {
-      selectedUsers = activeUsers.filter((user: any) =>
-        selectedPeople.includes(String(user?.id)),
+      list = activeUsers.filter(
+        user =>
+          user.groupId &&
+          groupIds.has(user.groupId),
       );
+    } else {
+      list = selectedPeople
+        .map(id => byId.get(id))
+        .filter(
+          (
+            user,
+          ): user is UserProfile =>
+            !!user,
+        );
     }
 
-    /*
-     * Convert users into EmailJS recipients.
-     *
-     * De-duplicate by email address so one person does not
-     * receive the same emergency email twice.
-     */
-    const seenEmails = new Set<string>();
+    // Prevent the same email address from
+    // receiving duplicate emails.
+    const seen = new Set<string>();
 
-    return selectedUsers
-      .map((user: any) => {
-        const email = String(user?.email ?? '').trim();
+    return list
+      .filter(user => {
+        const email =
+          user.email
+            .trim()
+            .toLowerCase();
 
-        return {
-          id: String(user?.id ?? email),
-          name: String(user?.name ?? 'Member'),
-          email,
-        };
-      })
-      .filter(recipient => {
-        const emailKey = recipient.email.toLowerCase();
-
-        if (!emailKey) {
+        if (
+          !email ||
+          seen.has(email)
+        ) {
           return false;
         }
 
-        if (seenEmails.has(emailKey)) {
-          return false;
-        }
-
-        seenEmails.add(emailKey);
+        seen.add(email);
 
         return true;
-      });
+      })
+      .map(user => ({
+        id: user.id,
+        name: user.name,
+        email: user.email.trim(),
+      }));
   }, [
-    mode,
     activeUsers,
+    mode,
     selectedGroups,
     selectedPeople,
   ]);
 
+  const toggle = (
+    id: string,
+    setSelected: React.Dispatch<
+      React.SetStateAction<string[]>
+    >,
+  ) => {
+    setSelected(current =>
+      current.includes(id)
+        ? current.filter(
+            item => item !== id,
+          )
+        : [...current, id],
+    );
+  };
 
-  /*
-   * --------------------------------------------------------------------------
-   * VALIDATION
-   * --------------------------------------------------------------------------
-   */
-
-  function validate(): string | null {
+  const send = async () => {
     if (!subject.trim()) {
-      return 'Please enter an email subject.';
+      setNotice({
+        tone: 'bad',
+        text: 'Enter a subject.',
+      });
+      return;
     }
 
     if (!message.trim()) {
-      return 'Please enter the emergency message.';
+      setNotice({
+        tone: 'bad',
+        text:
+          'Enter the emergency message.',
+      });
+      return;
     }
 
     if (recipients.length === 0) {
-      return 'Please select at least one recipient.';
-    }
-
-    return null;
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * SEND
-   * --------------------------------------------------------------------------
-   */
-
-  async function handleSend() {
-    if (sending) {
-      return;
-    }
-
-    setNotice(null);
-
-    const validationError = validate();
-
-    if (validationError) {
       setNotice({
         tone: 'bad',
-        text: validationError,
+        text:
+          'Choose at least one recipient with an email address.',
       });
-
       return;
     }
 
-    const confirmed = await confirmAsync({
-      title: 'Send Emergency Email?',
-      message:
-        `This will send the emergency message to ${recipients.length} recipient${
-          recipients.length === 1 ? '' : 's'
-        }.\n\nDo you want to continue?`,
-      confirmText: 'Send',
-      cancelText: 'Cancel',
-    });
+    const ok = await confirmAsync(
+      'Send emergency email?',
+      `This will send the message to ${
+        recipients.length
+      } ${
+        recipients.length === 1
+          ? 'person'
+          : 'people'
+      }. Email cannot be recalled after it is sent.`,
+      'Send email',
+      true,
+    );
 
-    if (!confirmed) {
+    if (!ok) {
       return;
     }
 
     setSending(true);
+    setProgress(0);
     setNotice(null);
 
     let sent = 0;
@@ -300,29 +232,33 @@ export default function EmergencyEmailScreen() {
     const failed: string[] = [];
 
     try {
-      for (let i = 0; i < recipients.length; i += 1) {
-        const recipient = recipients[i];
-
-        setProgress(
-          `Sending ${i + 1} of ${recipients.length}...\n${recipient.name}`,
-        );
+      for (
+        let i = 0;
+        i < recipients.length;
+        i += 1
+      ) {
+        const recipient =
+          recipients[i];
 
         try {
           await sendEmergencyEmail({
             recipient,
             subject: subject.trim(),
             message: message.trim(),
+            senderName: profile.name,
+            replyTo: profile.email,
           });
 
           sent += 1;
         } catch (error) {
           /*
            * IMPORTANT:
-           * Do not hide the EmailJS error.
            *
-           * This will show the actual HTTP status and response
-           * returned by EmailJS, which will help us diagnose
-           * the problem.
+           * We intentionally do NOT use friendlyError()
+           * here because it hides the real EmailJS error.
+           *
+           * This will show us the exact response returned
+           * by EmailJS, including HTTP status.
            */
           const errorMessage =
             error instanceof Error
@@ -334,680 +270,557 @@ export default function EmergencyEmailScreen() {
           );
         }
 
+        setProgress(i + 1);
+
         /*
-         * Do not wait after the final request.
+         * EmailJS rate limit protection.
          */
-        if (i < recipients.length - 1) {
-          await wait(EMAIL_SEND_INTERVAL_MS);
+        if (
+          i <
+          recipients.length - 1
+        ) {
+          await wait(
+            EMAIL_SEND_INTERVAL_MS,
+          );
         }
       }
-
-      setProgress('');
 
       if (failed.length === 0) {
         setNotice({
           tone: 'good',
           text:
-            `${sent} email${
-              sent === 1 ? '' : 's'
-            } sent successfully.`,
+            `Emergency email sent to all ${sent} selected ${
+              sent === 1
+                ? 'recipient'
+                : 'recipients'
+            }.`,
         });
 
-        /*
-         * Clear the message after a completely successful send.
-         */
-        setSubject('');
         setMessage('');
-
-        return;
-      }
-
-      if (sent === 0) {
+      } else {
         setNotice({
           tone: 'bad',
           text:
-            `0 sent successfully; ${failed.length} failed.\n\n` +
+            `${sent} sent successfully; ${failed.length} failed.\n\n` +
             failed.join('\n'),
         });
-
-        return;
       }
-
-      setNotice({
-        tone: 'bad',
-        text:
-          `${sent} sent successfully; ${failed.length} failed.\n\n` +
-          failed.join('\n'),
-      });
     } finally {
       setSending(false);
-      setProgress('');
     }
-  }
+  };
 
-
-  /*
-   * --------------------------------------------------------------------------
-   * MODE BUTTON
-   * --------------------------------------------------------------------------
-   */
-
-  function ModeButton({
-    value,
-    title,
-    icon,
-  }: {
-    value: SendMode;
-    title: string;
-    icon: string;
-  }) {
-    const selected = mode === value;
-
-    return (
-      <Pressable
-        onPress={() => {
-          setMode(value);
-          setNotice(null);
-        }}
-        disabled={sending}
-        style={{
-          flex: 1,
-          minHeight: 58,
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: selected
-            ? colors.primary
-            : colors.border,
-          backgroundColor: selected
-            ? colors.primary
-            : colors.card,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 8,
-        }}
-      >
-        <Icon
-          name={icon as any}
-          size={20}
-          color={
-            selected
-              ? colors.onPrimary
-              : colors.text
-          }
-        />
-
-        <Text
-          style={{
-            marginTop: 5,
-            fontSize: 12,
-            fontWeight: '700',
-            color: selected
-              ? colors.onPrimary
-              : colors.text,
-            textAlign: 'center',
-          }}
-        >
-          {title}
-        </Text>
-      </Pressable>
-    );
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * GROUP LIST
-   * --------------------------------------------------------------------------
-   */
-
-  function renderGroups() {
-    if (availableGroups.length === 0) {
-      return (
-        <Text
-          style={{
-            color: colors.mutedText,
-            paddingVertical: 10,
-          }}
-        >
-          No groups available.
-        </Text>
-      );
-    }
-
-    return (
-      <View style={{ gap: 8 }}>
-        {availableGroups.map((group: any) => {
-          const groupId = String(
-            group?.id ??
-            group?.groupId ??
-            group?.name ??
-            '',
-          );
-
-          const groupName = String(
-            group?.name ??
-            group?.title ??
-            'Group',
-          );
-
-          const selected =
-            selectedGroups.includes(groupId);
-
-          return (
-            <Pressable
-              key={groupId}
-              onPress={() => toggleGroup(groupId)}
-              disabled={sending}
-              style={{
-                minHeight: 52,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: selected
-                  ? colors.primary
-                  : colors.border,
-                backgroundColor: selected
-                  ? colors.primary + '12'
-                  : colors.card,
-                paddingHorizontal: 14,
-                flexDirection: 'row',
-                alignItems: 'center',
-              }}
-            >
-              <View
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 6,
-                  borderWidth: 2,
-                  borderColor: selected
-                    ? colors.primary
-                    : colors.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 12,
-                }}
-              >
-                {selected && (
-                  <Icon
-                    name="check"
-                    size={14}
-                    color={colors.primary}
-                  />
-                )}
-              </View>
-
-              <Text
-                style={{
-                  flex: 1,
-                  fontWeight: '600',
-                  color: colors.text,
-                }}
-              >
-                {groupName}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    );
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * PEOPLE LIST
-   * --------------------------------------------------------------------------
-   */
-
-  function renderPeople() {
-    return (
-      <View>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search name or email..."
-          placeholderTextColor={colors.mutedText}
-          editable={!sending}
-          style={{
-            minHeight: 48,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 12,
-            paddingHorizontal: 14,
-            color: colors.text,
-            backgroundColor: colors.card,
-            marginBottom: 10,
-          }}
-        />
-
-        {filteredPeople.length === 0 ? (
-          <Text
-            style={{
-              color: colors.mutedText,
-              paddingVertical: 10,
-            }}
-          >
-            No people found.
-          </Text>
-        ) : (
-          <View style={{ gap: 8 }}>
-            {filteredPeople.map((user: any) => {
-              const userId = String(
-                user?.id ??
-                user?.email ??
-                '',
-              );
-
-              const selected =
-                selectedPeople.includes(userId);
-
-              const name = String(
-                user?.name ?? 'Member',
-              );
-
-              const email = String(
-                user?.email ?? '',
-              );
-
-              return (
-                <Pressable
-                  key={userId}
-                  onPress={() =>
-                    togglePerson(userId)
-                  }
-                  disabled={sending}
-                  style={{
-                    minHeight: 58,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: selected
-                      ? colors.primary
-                      : colors.border,
-                    backgroundColor: selected
-                      ? colors.primary + '12'
-                      : colors.card,
-                    paddingHorizontal: 14,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
-                      borderWidth: 2,
-                      borderColor: selected
-                        ? colors.primary
-                        : colors.border,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginRight: 12,
-                    }}
-                  >
-                    {selected && (
-                      <Icon
-                        name="check"
-                        size={14}
-                        color={colors.primary}
-                      />
-                    )}
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontWeight: '700',
-                        color: colors.text,
-                      }}
-                    >
-                      {name}
-                    </Text>
-
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        marginTop: 2,
-                        color: colors.mutedText,
-                      }}
-                    >
-                      {email}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-      </View>
-    );
-  }
-
-
-  /*
-   * --------------------------------------------------------------------------
-   * SCREEN
-   * --------------------------------------------------------------------------
-   */
+  const loading =
+    (users.loading &&
+      !users.data) ||
+    (groups.loading &&
+      !groups.data);
 
   return (
-    <Screen>
-      <ScrollView
-        contentContainerStyle={{
-          padding: 16,
-          paddingBottom: 40,
+    <Screen scroll>
+      <Card
+        style={{
+          backgroundColor:
+            palette.primary,
         }}
-        keyboardShouldPersistTaps="handled"
       >
-        <View style={{ marginBottom: 18 }}>
-          <Text
-            style={{
-              fontSize: 26,
-              fontWeight: '800',
-              color: colors.text,
-            }}
-          >
-            Emergency Email
-          </Text>
-
-          <Text
-            style={{
-              marginTop: 5,
-              color: colors.mutedText,
-              lineHeight: 20,
-            }}
-          >
-            Send an urgent notification to selected
-            members or the entire congregation.
-          </Text>
-        </View>
-
-
-        {/* ---------------------------------------------------------------- */}
-        {/* RECIPIENT MODE                                                    */}
-        {/* ---------------------------------------------------------------- */}
-
-        <Card style={{ marginBottom: 14 }}>
-          <SectionTitle>Recipients</SectionTitle>
-
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+          }}
+        >
           <View
             style={{
-              flexDirection: 'row',
-              gap: 8,
-              marginTop: 8,
+              width: 42,
+              height: 42,
+              borderRadius: 21,
+              backgroundColor:
+                palette.primarySoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: space.md,
             }}
           >
-            <ModeButton
-              value="all"
-              title="Everyone"
-              icon="users"
-            />
-
-            <ModeButton
-              value="groups"
-              title="Groups"
-              icon="layers"
-            />
-
-            <ModeButton
-              value="people"
-              title="People"
-              icon="user"
+            <Icon
+              name="attention"
+              size={22}
+              color={
+                palette.onPrimary
+              }
             />
           </View>
 
           <View
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 12,
-              backgroundColor:
-                colors.primary + '10',
-            }}
+            style={{ flex: 1 }}
           >
-            <Text
+            <Title
               style={{
-                fontWeight: '700',
-                color: colors.text,
+                color:
+                  palette.onPrimary,
+                fontSize: 22,
               }}
             >
-              {recipients.length} recipient
-              {recipients.length === 1
-                ? ''
-                : 's'}
-            </Text>
+              Emergency notification
+            </Title>
+
+            <Small
+              style={{
+                color:
+                  palette.onPrimary,
+                opacity: 0.82,
+                marginTop: space.xs,
+              }}
+            >
+              Send an urgent email to active congregation
+              members. Nothing is saved to Firestore.
+            </Small>
           </View>
-        </Card>
+        </View>
+      </Card>
 
+      {notice ? (
+        <Notice
+          tone={notice.tone}
+          message={notice.text}
+        />
+      ) : null}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* GROUP SELECTION                                                   */}
-        {/* ---------------------------------------------------------------- */}
+      <SectionTitle>
+        Recipients
+      </SectionTitle>
 
-        {mode === 'groups' && (
-          <Card style={{ marginBottom: 14 }}>
-            <SectionTitle>
-              Select Groups
-            </SectionTitle>
+      <ChipRow>
+        <Chip
+          label="Entire congregation"
+          selected={
+            mode === 'all'
+          }
+          onPress={() =>
+            setMode('all')
+          }
+          disabled={sending}
+        />
 
-            <View style={{ marginTop: 8 }}>
-              {renderGroups()}
-            </View>
-          </Card>
-        )}
+        <Chip
+          label="Ministry groups"
+          selected={
+            mode === 'groups'
+          }
+          onPress={() =>
+            setMode('groups')
+          }
+          disabled={sending}
+        />
 
+        <Chip
+          label="Specific people"
+          selected={
+            mode === 'people'
+          }
+          onPress={() =>
+            setMode('people')
+          }
+          disabled={sending}
+        />
+      </ChipRow>
 
-        {/* ---------------------------------------------------------------- */}
-        {/* PEOPLE SELECTION                                                  */}
-        {/* ---------------------------------------------------------------- */}
-
-        {mode === 'people' && (
-          <Card style={{ marginBottom: 14 }}>
-            <SectionTitle>
-              Select People
-            </SectionTitle>
-
-            <View style={{ marginTop: 8 }}>
-              {renderPeople()}
-            </View>
-          </Card>
-        )}
-
-
-        {/* ---------------------------------------------------------------- */}
-        {/* EMAIL COMPOSER                                                    */}
-        {/* ---------------------------------------------------------------- */}
-
-        <Card style={{ marginBottom: 14 }}>
-          <SectionTitle>
-            Emergency Message
-          </SectionTitle>
-
-          <Text
+      {mode === 'all' ? (
+        <Card>
+          <View
             style={{
-              marginTop: 12,
-              marginBottom: 6,
-              fontSize: 13,
-              fontWeight: '700',
-              color: colors.text,
-            }}
-          >
-            Subject
-          </Text>
-
-          <TextInput
-            value={subject}
-            onChangeText={setSubject}
-            placeholder="Emergency notification"
-            placeholderTextColor={colors.mutedText}
-            editable={!sending}
-            style={{
-              minHeight: 48,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              color: colors.text,
-              backgroundColor: colors.card,
-            }}
-          />
-
-          <Text
-            style={{
-              marginTop: 14,
-              marginBottom: 6,
-              fontSize: 13,
-              fontWeight: '700',
-              color: colors.text,
-            }}
-          >
-            Message
-          </Text>
-
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Type the emergency message..."
-            placeholderTextColor={colors.mutedText}
-            editable={!sending}
-            multiline
-            textAlignVertical="top"
-            style={{
-              minHeight: 160,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              color: colors.text,
-              backgroundColor: colors.card,
-            }}
-          />
-        </Card>
-
-
-        {/* ---------------------------------------------------------------- */}
-        {/* PROGRESS                                                          */}
-        {/* ---------------------------------------------------------------- */}
-
-        {sending && (
-          <Card
-            style={{
-              marginBottom: 14,
-              borderColor: colors.primary,
-              borderWidth: 1,
+              flexDirection:
+                'row',
+              justifyContent:
+                'space-between',
+              alignItems:
+                'center',
             }}
           >
             <View
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
+                flex: 1,
+                paddingRight:
+                  space.md,
               }}
             >
-              <ActivityIndicator
-                size="small"
-                color={colors.primary}
-              />
-
-              <Text
+              <Body
                 style={{
-                  marginLeft: 10,
-                  flex: 1,
-                  color: colors.text,
-                  fontWeight: '600',
-                  lineHeight: 20,
+                  fontWeight:
+                    '700',
                 }}
               >
-                {progress || 'Sending...'}
-              </Text>
+                Active congregation
+                members
+              </Body>
+
+              <Small>
+                Only active profiles
+                with an email
+                address are included.
+              </Small>
             </View>
-          </Card>
-        )}
 
+            <Badge
+              label={`${recipients.length}`}
+              tone="info"
+            />
+          </View>
+        </Card>
+      ) : null}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* NOTICE                                                            */}
-        {/* ---------------------------------------------------------------- */}
-
-        {notice && (
-          <Card
+      {mode === 'groups' ? (
+        <View>
+          <Small
             style={{
-              marginBottom: 14,
-              borderWidth: 1,
-              borderColor:
-                notice.tone === 'good'
-                  ? colors.primary
-                  : notice.tone === 'bad'
-                    ? colors.danger
-                    : colors.border,
+              marginBottom:
+                space.md,
             }}
           >
-            <Text
-              style={{
-                color:
-                  notice.tone === 'good'
-                    ? colors.primary
-                    : notice.tone === 'bad'
-                      ? colors.danger
-                      : colors.text,
-                lineHeight: 21,
-                fontWeight: '600',
-              }}
-            >
-              {notice.text}
-            </Text>
-          </Card>
-        )}
+            Select one or more ministry
+            groups. People without a group
+            will not be included.
+          </Small>
 
+          {loading ? (
+            <ActivityIndicator
+              color={
+                palette.primary
+              }
+            />
+          ) : null}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* SEND BUTTON                                                       */}
-        {/* ---------------------------------------------------------------- */}
+          {!loading &&
+          groups.data?.length ===
+            0 ? (
+            <EmptyState
+              title="No ministry groups"
+              message="Create ministry groups first."
+            />
+          ) : null}
 
-        <Pressable
-          onPress={handleSend}
-          disabled={sending}
+          {(groups.data ?? []).map(
+            group => {
+              const selected =
+                selectedGroups.includes(
+                  group.id,
+                );
+
+              const count =
+                activeUsers.filter(
+                  user =>
+                    user.groupId ===
+                    group.id,
+                ).length;
+
+              return (
+                <Pressable
+                  key={group.id}
+                  disabled={sending}
+                  onPress={() =>
+                    toggle(
+                      group.id,
+                      setSelectedGroups,
+                    )
+                  }
+                  style={{
+                    opacity:
+                      sending
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  <Card
+                    style={
+                      selected
+                        ? {
+                            borderColor:
+                              palette.primary,
+                            borderWidth: 2,
+                          }
+                        : undefined
+                    }
+                  >
+                    <View
+                      style={{
+                        flexDirection:
+                          'row',
+                        alignItems:
+                          'center',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 14,
+                          borderWidth: 1.5,
+                          borderColor:
+                            selected
+                              ? palette.primary
+                              : palette.placeholder,
+                          alignItems:
+                            'center',
+                          justifyContent:
+                            'center',
+                          marginRight:
+                            space.md,
+                        }}
+                      >
+                        {selected ? (
+                          <Icon
+                            name="check"
+                            size={18}
+                            color={
+                              palette.primary
+                            }
+                          />
+                        ) : null}
+                      </View>
+
+                      <View
+                        style={{
+                          flex: 1,
+                        }}
+                      >
+                        <Body
+                          style={{
+                            fontWeight:
+                              '700',
+                          }}
+                        >
+                          {group.name}
+                        </Body>
+
+                        <Small>
+                          {count}{' '}
+                          active{' '}
+                          {count === 1
+                            ? 'person'
+                            : 'people'}{' '}
+                          with email
+                        </Small>
+                      </View>
+                    </View>
+                  </Card>
+                </Pressable>
+              );
+            },
+          )}
+        </View>
+      ) : null}
+
+      {mode === 'people' ? (
+        <View>
+          <TextField
+            label="Search people"
+            value={personSearch}
+            onChangeText={
+              setPersonSearch
+            }
+            placeholder="Name or email"
+            autoCapitalize="none"
+            editable={!sending}
+          />
+
+          <Small
+            style={{
+              marginBottom:
+                space.md,
+            }}
+          >
+            {selectedPeople.length}{' '}
+            selected
+          </Small>
+
+          {filteredPeople.map(
+            person => {
+              const selected =
+                selectedPeople.includes(
+                  person.id,
+                );
+
+              return (
+                <Pressable
+                  key={person.id}
+                  disabled={sending}
+                  onPress={() =>
+                    toggle(
+                      person.id,
+                      setSelectedPeople,
+                    )
+                  }
+                  style={{
+                    opacity:
+                      sending
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  <Card
+                    style={
+                      selected
+                        ? {
+                            borderColor:
+                              palette.primary,
+                            borderWidth: 2,
+                          }
+                        : undefined
+                    }
+                  >
+                    <View
+                      style={{
+                        flexDirection:
+                          'row',
+                        alignItems:
+                          'center',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 14,
+                          borderWidth: 1.5,
+                          borderColor:
+                            selected
+                              ? palette.primary
+                              : palette.placeholder,
+                          alignItems:
+                            'center',
+                          justifyContent:
+                            'center',
+                          marginRight:
+                            space.md,
+                        }}
+                      >
+                        {selected ? (
+                          <Icon
+                            name="check"
+                            size={18}
+                            color={
+                              palette.primary
+                            }
+                          />
+                        ) : null}
+                      </View>
+
+                      <View
+                        style={{
+                          flex: 1,
+                        }}
+                      >
+                        <Body
+                          style={{
+                            fontWeight:
+                              '700',
+                          }}
+                        >
+                          {person.name}
+                        </Body>
+
+                        <Small>
+                          {person.email}
+                        </Small>
+                      </View>
+                    </View>
+                  </Card>
+                </Pressable>
+              );
+            },
+          )}
+        </View>
+      ) : null}
+
+      <SectionTitle>
+        Message
+      </SectionTitle>
+
+      <TextField
+        label="Subject"
+        value={subject}
+        onChangeText={
+          setSubject
+        }
+        placeholder="Emergency notification"
+        editable={!sending}
+        maxLength={160}
+      />
+
+      <TextField
+        label="Message"
+        value={message}
+        onChangeText={
+          setMessage
+        }
+        placeholder="Type the emergency information here…"
+        multiline
+        editable={!sending}
+        maxLength={5000}
+      />
+
+      <Card>
+        <Label>
+          Ready to send
+        </Label>
+
+        <View
           style={{
-            minHeight: 54,
-            borderRadius: 14,
-            backgroundColor: sending
-              ? colors.border
-              : colors.primary,
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'row',
-            paddingHorizontal: 18,
+            flexDirection:
+              'row',
+            justifyContent:
+              'space-between',
+            marginTop:
+              space.sm,
           }}
         >
-          {sending ? (
-            <ActivityIndicator
-              size="small"
-              color={colors.text}
-            />
-          ) : (
-            <Icon
-              name="send"
-              size={20}
-              color={colors.onPrimary}
-            />
-          )}
+          <Small>
+            Recipients
+          </Small>
 
-          <Text
+          <Body
             style={{
-              marginLeft: 8,
-              color: sending
-                ? colors.mutedText
-                : colors.onPrimary,
-              fontWeight: '800',
-              fontSize: 15,
+              fontWeight:
+                '700',
             }}
           >
             {sending
-              ? 'Sending...'
-              : 'Send Emergency Email'}
-          </Text>
-        </Pressable>
-      </ScrollView>
+              ? `${progress} / ${recipients.length}`
+              : recipients.length}
+          </Body>
+        </View>
+
+        <Small
+          style={{
+            marginTop:
+              space.sm,
+          }}
+        >
+          Each recipient receives a
+          separate email. Their email
+          address is not exposed to other
+          recipients.
+        </Small>
+      </Card>
+
+      <Button
+        label={
+          sending
+            ? `Sending ${progress} of ${recipients.length}…`
+            : 'Send emergency email'
+        }
+        onPress={send}
+        loading={sending}
+        disabled={
+          loading ||
+          sending ||
+          recipients.length === 0
+        }
+        style={{
+          marginTop:
+            space.md,
+        }}
+      />
     </Screen>
   );
 }
