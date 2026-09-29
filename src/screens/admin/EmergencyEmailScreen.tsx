@@ -112,9 +112,12 @@ export default function EmergencyEmailScreen() {
       if (failed.length === 0) {
         setNotice({ tone: 'good', text: `Emergency email sent to all ${sent} selected recipients.` });
         setMessage('');
-      } else {
-        setNotice({ tone: 'warn', text: `${sent} sent successfully; ${failed.length} failed. Check the email settings/template and try again for the failed recipients.` });
-      }
+      } } else {
+  setNotice({
+    tone: 'bad',
+    text: `${sent} sent successfully; ${failed.length} failed.\n\n${failed.join('\n')}`,
+  });
+}
     } finally {
       setSending(false);
     }
