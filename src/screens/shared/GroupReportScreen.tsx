@@ -9,7 +9,7 @@ import { useAppData } from '../../context/AppDataContext';
 import { useLive } from '../../hooks/useLive';
 import { SharedStackParams } from '../../navigation/types';
 import { subscribeToGroups } from '../../services/groupService';
-import { subscribeToGroupReports } from '../../services/reportService';
+import { subscribeToGroupReports, subscribeToUnassignedReports } from '../../services/reportService';
 import { MinistryGroup, MonthlyReport } from '../../types';
 import { space } from '../../theme';
 import { formatMonthLong } from '../../utils/dates';
@@ -22,36 +22,54 @@ export default function GroupReportScreen() {
   const groups = useLive<MinistryGroup[]>(subscribeToGroups, []);
 
   const requestedGroupId = route.params?.groupId;
+  const showUnassigned = route.params?.unassigned === true;
   const overseerGroup = useMemo(
     () => (groups.data ?? []).find(g => g.overseerId === profile.id),
     [groups.data, profile.id],
   );
   const canViewAllGroups = profile.role === 'admin' && profile.secretary === true;
+  const canViewUnassigned = profile.role === 'admin';
   const canViewAssignedGroup = !!overseerGroup;
-  const canViewGroupReports = canViewAllGroups || canViewAssignedGroup;
+  const canViewGroupReports = canViewAllGroups || canViewAssignedGroup || (showUnassigned && canViewUnassigned);
   const selectedGroupId = canViewAllGroups ? requestedGroupId : overseerGroup?.id;
   const selectedGroup = useMemo(
     () => (groups.data ?? []).find(g => g.id === selectedGroupId),
     [groups.data, selectedGroupId],
   );
   const reports = useLive<MonthlyReport[]>(
-    (ok, err) => selectedGroupId ? subscribeToGroupReports(selectedGroupId, currentMonthKey, ok, err) : () => {},
-    [selectedGroupId, currentMonthKey],
+    (ok, err) => {
+      if (showUnassigned && canViewUnassigned) {
+        return subscribeToUnassignedReports(currentMonthKey, ok, err);
+      }
+      return selectedGroupId
+        ? subscribeToGroupReports(selectedGroupId, currentMonthKey, ok, err)
+        : (() => {});
+    },
+    [showUnassigned, canViewUnassigned, selectedGroupId, currentMonthKey],
   );
 
 
   if (groups.loading && !groups.data) return <Screen><LoadingView /></Screen>;
 
   if (!canViewGroupReports) {
-    return <Screen><EmptyState title="Group reports restricted" message="Only an administrator appointed as secretary can view reports for all ministry groups. A ministry group overseer can view reports for the group assigned to them." /></Screen>;
+    return <Screen><EmptyState title="Group reports restricted" message="Only an assigned group overseer or administrator can view these reports." /></Screen>;
   }
 
   // Secretaries can enter this page without a groupId and choose a group.
-  if (canViewAllGroups && !selectedGroupId) {
+  if (canViewAllGroups && !selectedGroupId && !showUnassigned) {
     return (
       <Screen>
         <Title>Group Monthly Reports</Title>
         <Body style={{ marginBottom: space.lg }}>Choose a ministry group to view its reports for {formatMonthLong(currentMonthKey)}.</Body>
+        <Card onPress={() => navigation.navigate('GroupReport', { unassigned: true })} accessibilityLabel="Unassigned reports">
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Heading>Unassigned reports</Heading>
+              <Small>Reports from people who are not assigned to a ministry group</Small>
+            </View>
+            <Body>›</Body>
+          </View>
+        </Card>
         {(groups.data ?? []).map(group => (
           <Card key={group.id} onPress={() => navigation.navigate('GroupReport', { groupId: group.id })} accessibilityLabel={group.name}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -64,6 +82,39 @@ export default function GroupReportScreen() {
           </Card>
         ))}
         {!groups.data?.length ? <EmptyState title="No groups yet" message="Create ministry groups first." /> : null}
+      </Screen>
+    );
+  }
+
+  if (showUnassigned && canViewUnassigned) {
+    const submitted = reports.data?.length ?? 0;
+    const loading = reports.loading && !reports.data;
+    return (
+      <Screen>
+        <Button
+          label={canViewAllGroups ? '← All groups' : '← Back'}
+          variant="secondary"
+          onPress={() => navigation.goBack()}
+          style={{ marginBottom: space.md }}
+        />
+        <Title>Unassigned reports</Title>
+        <Body>{formatMonthLong(currentMonthKey)} · {submitted} report{submitted === 1 ? '' : 's'} received</Body>
+        <Notice tone="info" message="These reports are still visible to administrators even when the member has no ministry group." />
+        {reports.error ? <Notice tone="bad" message={reports.error} /> : null}
+        {loading ? <LoadingView /> : null}
+        {!loading && !reports.error && !reports.data?.length ? <EmptyState title="No unassigned reports" message="No reports have been submitted without a ministry group this month." /> : null}
+        {(reports.data ?? []).map(report => (
+          <Card key={report.id} style={{ marginTop: space.md }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, paddingRight: space.sm }}>
+                <Heading>{report.reporterName ?? report.uid}</Heading>
+                <Small>{REPORTING_TYPE_LABELS[report.reportingType]}</Small>
+              </View>
+              <Badge label="Submitted" tone="good" />
+            </View>
+            <Body style={{ marginTop: space.sm }}>{summarizeReport(report.reportingType, report)}</Body>
+          </Card>
+        ))}
       </Screen>
     );
   }
