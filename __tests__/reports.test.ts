@@ -55,8 +55,10 @@ describe('reporting type rules', () => {
     expect(reportIsComplete('publisher', {})).toBe(false);
     expect(reportIsComplete('publisher', { participated: false })).toBe(true); // "No" is still a complete answer
     expect(reportIsComplete('regular_pioneer', {})).toBe(false);
-    expect(reportIsComplete('regular_pioneer', { hours: 0 })).toBe(true);
-    expect(reportIsComplete('regular_pioneer', { hours: 65 })).toBe(true); // more than the reference is fine
+    expect(reportIsComplete('regular_pioneer', { hours: 0 })).toBe(false);
+    expect(reportIsComplete('regular_pioneer', { hours: 65 })).toBe(false); // studies are also required
+    expect(reportIsComplete('regular_pioneer', { hours: 65, bibleStudies: 0 })).toBe(true);
+    expect(reportIsComplete('auxiliary_pioneer', { hours: 30, bibleStudies: 4 })).toBe(true);
   });
 
   it('every reporting type has a label', () => {
