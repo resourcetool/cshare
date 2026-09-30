@@ -13,7 +13,7 @@ export type SharedStackParams = {
   CantDo: { assignmentId: string };
   ContactAdmin: undefined;
   MyReport: undefined;
-  GroupReport: { groupId?: string } | undefined;
+  GroupReport: { groupId?: string; unassigned?: boolean } | undefined;
 };
 
 export type UserStackParams = SharedStackParams & {
