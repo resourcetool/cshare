@@ -26,7 +26,15 @@ export function hourReferenceFor(type: ReportingType, settings: Pick<AppSettings
 
 /** True once the form has what it needs to submit, for this reporting type. */
 export function reportIsComplete(type: ReportingType, draft: Partial<MonthlyReportInput>): boolean {
-  if (reportsHours(type)) return typeof draft.hours === 'number' && draft.hours >= 0;
+  if (reportsHours(type)) {
+    return (
+      typeof draft.hours === 'number' &&
+      draft.hours >= 0 &&
+      typeof draft.bibleStudies === 'number' &&
+      Number.isInteger(draft.bibleStudies) &&
+      draft.bibleStudies >= 0
+    );
+  }
   if (draft.participated !== true) return draft.participated === false;
   return typeof draft.bibleStudies === 'number' && Number.isInteger(draft.bibleStudies) && draft.bibleStudies >= 0;
 }
