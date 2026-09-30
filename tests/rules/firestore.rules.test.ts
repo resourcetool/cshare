@@ -215,6 +215,61 @@ describe('monthly reports', () => {
   });
 });
 
+describe('daily pioneer service entries', () => {
+  it('allows an auxiliary or regular pioneer to save and read their own entries', async () => {
+    const db = as('user1');
+    await updateDoc(doc(db, 'users/user1'), { reportingType: 'regular_pioneer' });
+    await assertSucceeds(setDoc(doc(db, 'serviceEntries/user1/entries/2026-10-01'), {
+      uid: 'user1', date: '2026-10-01', monthKey: '2026-10',
+      hours: 3, bibleStudies: 1,
+    }));
+    await assertSucceeds(getDoc(doc(db, 'serviceEntries/user1/entries/2026-10-01')));
+  });
+
+  it('does not allow a publisher to write pioneer service entries', async () => {
+    await assertFails(setDoc(doc(as('user1'), 'serviceEntries/user1/entries/2026-10-01'), {
+      uid: 'user1', date: '2026-10-01', monthKey: '2026-10',
+      hours: 3, bibleStudies: 1,
+    }));
+  });
+
+  it('does not allow one user to read or write another user\'s service entries', async () => {
+    await assertFails(getDoc(doc(as('user2'), 'serviceEntries/user1/entries/2026-10-01')));
+    await assertFails(setDoc(doc(as('user2'), 'serviceEntries/user1/entries/2026-10-01'), {
+      uid: 'user1', date: '2026-10-01', monthKey: '2026-10',
+      hours: 3, bibleStudies: 1,
+    }));
+  });
+
+  it('rejects impossible daily values', async () => {
+    await updateDoc(doc(as('admin1'), 'users/user1'), { reportingType: 'auxiliary_pioneer' });
+    await assertFails(setDoc(doc(as('user1'), 'serviceEntries/user1/entries/bad-hours'), {
+      uid: 'user1', date: '2026-10-01', monthKey: '2026-10',
+      hours: 25, bibleStudies: 1,
+    }));
+    await assertFails(setDoc(doc(as('user1'), 'serviceEntries/user1/entries/bad-studies'), {
+      uid: 'user1', date: '2026-10-01', monthKey: '2026-10',
+      hours: 2, bibleStudies: 51,
+    }));
+  });
+});
+
+describe('unassigned monthly reports', () => {
+  it('allows an active user with no group to submit a report', async () => {
+    const db = as('user1');
+    await assertSucceeds(setDoc(doc(db, 'reports/user1_2026-11'), {
+      uid: 'user1', monthKey: '2026-11', reportingType: 'publisher',
+      participated: false, groupId: null, reporterName: 'One',
+      createdBy: 'user1', submittedAt: Timestamp.now(),
+    }));
+  });
+
+  it('allows administrators to query unassigned reports', async () => {
+    const db = as('admin1');
+    await assertSucceeds(getDocs(query(collection(db, 'reports'), where('monthKey', '==', '2026-10'))));
+  });
+});
+
 describe('ministry groups', () => {
   it('any active person can read groups; only administrators can write them', async () => {
     await assertSucceeds(getDoc(doc(as('user1'), 'groups/g1')));
