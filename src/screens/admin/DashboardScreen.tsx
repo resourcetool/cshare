@@ -40,6 +40,7 @@ export default function DashboardScreen() {
     { icon: 'people', label: 'People', onPress: () => nav.navigate('People') },
     { icon: 'groups', label: 'Ministry groups', onPress: () => nav.navigate('Groups') },
     ...(profile.secretary ? [{ icon: 'report' as IconName, label: 'Group reports', onPress: () => nav.navigate('GroupReport', undefined) }] : []),
+    { icon: 'report' as IconName, label: 'Unassigned reports', onPress: () => nav.navigate('GroupReport', { unassigned: true }) },
     { icon: 'settings', label: 'Settings', onPress: () => nav.navigate('Settings') },
   ];
 
