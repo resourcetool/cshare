@@ -164,7 +164,9 @@ export function submitReport(
         uid,
         monthKey,
         reportingType: input.reportingType,
-        ...(snapshot.groupId ? { groupId: snapshot.groupId } : {}),
+        // Always store the group snapshot. `null` deliberately means
+        // "unassigned"; administrators can still receive/see the report.
+        groupId: snapshot.groupId ?? null,
         reporterName: snapshot.reporterName,
         ...(input.participated !== undefined ? { participated: input.participated } : {}),
         ...(input.hours !== undefined ? { hours: input.hours } : {}),
@@ -174,6 +176,29 @@ export function submitReport(
         updatedAt: now(),
       }),
   );
+}
+
+/** Live reports with no ministry group at submission time.
+ * Admin-only UI uses this; filtering by month on Firestore also catches
+ * legacy reports that have no groupId field at all.
+ */
+export function subscribeToUnassignedReports(
+  monthKey: string,
+  onData: (reports: MonthlyReport[]) => void,
+  onError: (e: unknown) => void,
+): () => void {
+  return reports()
+    .where('monthKey', '==', monthKey)
+    .onSnapshot(
+      snap => {
+        const list = snap.docs
+          .map(d => mapReport(d.id, d.data() as FT.DocumentData))
+          .filter(r => !r.groupId)
+          .sort((a, b) => (a.reporterName ?? a.uid).localeCompare(b.reporterName ?? b.uid));
+        onData(list);
+      },
+      onError,
+    );
 }
 
 /** Live reports belonging to one ministry group. */
