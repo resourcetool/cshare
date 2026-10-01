@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import HomeScreen from '../screens/user/HomeScreen';
 import MyWeekScreen from '../screens/user/MyWeekScreen';
 import ContactAdminScreen from '../screens/user/ContactAdminScreen';
@@ -19,8 +20,9 @@ const Stack = createNativeStackNavigator<UserStackParams>();
 
 function UserTabs() {
   const { palette } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
-    <Tab.Navigator screenOptions={tabScreenOptions(palette)}>
+    <Tab.Navigator screenOptions={tabScreenOptions(palette, insets.bottom)}>
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home', tabBarIcon: tabIcon('home') }} />
       <Tab.Screen name="MyWeek" component={MyWeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('calendar') }} />
       <Tab.Screen name="Report" component={MyReportScreen} options={{ title: 'My Monthly Report', tabBarLabel: 'Report', tabBarIcon: tabIcon('report') }} />

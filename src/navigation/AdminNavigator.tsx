@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DashboardScreen from '../screens/admin/DashboardScreen';
 import WeekScreen from '../screens/admin/WeekScreen';
 import PeopleScreen from '../screens/admin/PeopleScreen';
@@ -25,8 +26,9 @@ const Stack = createNativeStackNavigator<AdminStackParams>();
 
 function AdminTabs() {
   const { palette } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
-    <Tab.Navigator screenOptions={tabScreenOptions(palette)}>
+    <Tab.Navigator screenOptions={tabScreenOptions(palette, insets.bottom)}>
       <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'CSHARE', tabBarLabel: 'Dashboard', tabBarIcon: tabIcon('home') }} />
       <Tab.Screen name="Week" component={WeekScreen} options={{ title: 'Week', tabBarLabel: 'Week', tabBarIcon: tabIcon('calendar') }} />
       <Tab.Screen name="People" component={PeopleScreen} options={{ title: 'People', tabBarLabel: 'People', tabBarIcon: tabIcon('people') }} />
