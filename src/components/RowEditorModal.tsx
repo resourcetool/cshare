@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ProgramRow, UserProfile } from '../types';
 import { meetsRequiredRole } from '../utils/qualifications';
@@ -121,7 +121,13 @@ export function RowEditorModal({ row, people, onSave, onDelete, onClose }: Props
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: space.lg }} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            contentContainerStyle={{ padding: space.lg, paddingBottom: Math.max(space.lg, insets.bottom + space.xl) }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
           {row.kind === 'song' ? (
             <TextField label="Song number" value={number} onChangeText={t => setNumber(t.replace(/[^0-9]/g, ''))} keyboardType="number-pad" maxLength={4} placeholder="For example: 74" />
           ) : (
@@ -163,7 +169,8 @@ export function RowEditorModal({ row, people, onSave, onDelete, onClose }: Props
           ) : null}
 
           <Button label="Remove this line from the sheet" variant="ghost" onPress={() => onDelete(row)} style={{ marginTop: space.xl }} />
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: palette.surface, borderTopColor: palette.line }]}>
           <View style={{ flexDirection: 'row', gap: space.md }}>

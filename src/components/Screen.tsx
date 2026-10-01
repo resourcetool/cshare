@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Palette, space } from '../theme';
 import { useTheme } from '../context/ThemeContext';
@@ -36,17 +36,27 @@ export function Screen({ children, scroll = true, footer, standalone, inTabs, co
   return (
     <View style={[styles.root, standalone && { paddingTop: insets.top }]}>
       <OfflineBanner />
-      {scroll ? (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          refreshControl={data ? <RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[palette.primary]} tintColor={palette.primary} /> : undefined}
-          contentContainerStyle={[styles.content, contentStyle]}>
-          {children}
-        </ScrollView>
-      ) : (
-        <View style={[styles.content, { flex: 1 }, contentStyle]}>{children}</View>
-      )}
-      {footer ? <View style={[styles.footer, { paddingBottom: inTabs ? space.md : Math.max(insets.bottom, space.md) }]}>{footer}</View> : null}
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}>
+        {scroll ? (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            refreshControl={data ? <RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[palette.primary]} tintColor={palette.primary} /> : undefined}
+            contentContainerStyle={[
+              styles.content,
+              { paddingBottom: Math.max(space.xxl, insets.bottom + space.xxl) },
+              contentStyle,
+            ]}>
+            {children}
+          </ScrollView>
+        ) : (
+          <View style={[styles.content, { flex: 1, paddingBottom: Math.max(space.xxl, insets.bottom + space.xxl) }, contentStyle]}>{children}</View>
+        )}
+        {footer ? <View style={[styles.footer, { paddingBottom: inTabs ? Math.max(space.md, insets.bottom) : Math.max(insets.bottom, space.md) }]}>{footer}</View> : null}
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -54,6 +64,7 @@ export function Screen({ children, scroll = true, footer, standalone, inTabs, co
 function makeStyles(palette: Palette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: palette.bg },
+    keyboard: { flex: 1 },
     content: { padding: space.lg, paddingBottom: space.xxl },
     footer: { padding: space.lg, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.line },
   });
