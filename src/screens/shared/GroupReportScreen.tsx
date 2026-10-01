@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
-import { View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
-import { Badge, Body, Button, Card, EmptyState, Heading, LoadingView, Notice, Small, Title } from '../../components/ui';
+import { Badge, Body, Button, Card, Chip, EmptyState, Heading, LoadingView, Notice, Small, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { useLive } from '../../hooks/useLive';
 import { SharedStackParams } from '../../navigation/types';
@@ -12,14 +12,59 @@ import { subscribeToGroups } from '../../services/groupService';
 import { subscribeToGroupReports, subscribeToUnassignedReports } from '../../services/reportService';
 import { MinistryGroup, MonthlyReport } from '../../types';
 import { space } from '../../theme';
-import { formatMonthLong } from '../../utils/dates';
+import { formatMonthLong, previousMonthKey } from '../../utils/dates';
 import { REPORTING_TYPE_LABELS, summarizeReport } from '../../utils/reports';
+
+function getMonthOptions(currentMonthKey: string, count = 24): string[] {
+  const months: string[] = [];
+  let key = currentMonthKey;
+
+  for (let i = 0; i < count; i += 1) {
+    months.push(key);
+    key = previousMonthKey(key);
+  }
+
+  return months;
+}
+
+function MonthFilter({
+  value,
+  onChange,
+  currentMonthKey,
+}: {
+  value: string;
+  onChange: (monthKey: string) => void;
+  currentMonthKey: string;
+}) {
+  const months = useMemo(() => getMonthOptions(currentMonthKey), [currentMonthKey]);
+
+  return (
+    <View style={{ marginTop: space.md, marginBottom: space.sm }}>
+      <Small style={{ marginBottom: space.xs }}>Report month</Small>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: space.xs, paddingRight: space.md }}
+      >
+        {months.map(monthKey => (
+          <Chip
+            key={monthKey}
+            label={formatMonthLong(monthKey)}
+            selected={value === monthKey}
+            onPress={() => onChange(monthKey)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
 
 export default function GroupReportScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<SharedStackParams>>();
   const route = useRoute<RouteProp<SharedStackParams, 'GroupReport'>>();
   const { profile, currentMonthKey } = useAppData();
   const groups = useLive<MinistryGroup[]>(subscribeToGroups, []);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
 
   const requestedGroupId = route.params?.groupId;
   const showUnassigned = route.params?.unassigned === true;
@@ -39,15 +84,14 @@ export default function GroupReportScreen() {
   const reports = useLive<MonthlyReport[]>(
     (ok, err) => {
       if (showUnassigned && canViewUnassigned) {
-        return subscribeToUnassignedReports(currentMonthKey, ok, err);
+        return subscribeToUnassignedReports(selectedMonthKey, ok, err);
       }
       return selectedGroupId
-        ? subscribeToGroupReports(selectedGroupId, currentMonthKey, ok, err)
+        ? subscribeToGroupReports(selectedGroupId, selectedMonthKey, ok, err)
         : (() => {});
     },
-    [showUnassigned, canViewUnassigned, selectedGroupId, currentMonthKey],
+    [showUnassigned, canViewUnassigned, selectedGroupId, selectedMonthKey],
   );
-
 
   if (groups.loading && !groups.data) return <Screen><LoadingView /></Screen>;
 
@@ -60,7 +104,7 @@ export default function GroupReportScreen() {
     return (
       <Screen>
         <Title>Group Monthly Reports</Title>
-        <Body style={{ marginBottom: space.lg }}>Choose a ministry group to view its reports for {formatMonthLong(currentMonthKey)}.</Body>
+        <Body style={{ marginBottom: space.lg }}>Choose a ministry group to view its reports.</Body>
         <Card onPress={() => navigation.navigate('GroupReport', { unassigned: true })} accessibilityLabel="Unassigned reports">
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
@@ -98,11 +142,12 @@ export default function GroupReportScreen() {
           style={{ marginBottom: space.md }}
         />
         <Title>Unassigned reports</Title>
-        <Body>{formatMonthLong(currentMonthKey)} · {submitted} report{submitted === 1 ? '' : 's'} received</Body>
+        <MonthFilter value={selectedMonthKey} onChange={setSelectedMonthKey} currentMonthKey={currentMonthKey} />
+        <Body>{formatMonthLong(selectedMonthKey)} · {submitted} report{submitted === 1 ? '' : 's'} received</Body>
         <Notice tone="info" message="These reports are still visible to administrators even when the member has no ministry group." />
         {reports.error ? <Notice tone="bad" message={reports.error} /> : null}
         {loading ? <LoadingView /> : null}
-        {!loading && !reports.error && !reports.data?.length ? <EmptyState title="No unassigned reports" message="No reports have been submitted without a ministry group this month." /> : null}
+        {!loading && !reports.error && !reports.data?.length ? <EmptyState title="No unassigned reports" message={`No reports have been submitted without a ministry group in ${formatMonthLong(selectedMonthKey)}.`} /> : null}
         {(reports.data ?? []).map(report => (
           <Card key={report.id} style={{ marginTop: space.md }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -137,12 +182,13 @@ export default function GroupReportScreen() {
         <Button label="← All groups" variant="secondary" onPress={() => navigation.navigate('GroupReport', undefined)} style={{ marginBottom: space.md }} />
       ) : null}
       <Title>{selectedGroup.name}</Title>
-      <Body>{formatMonthLong(currentMonthKey)} · {submitted} report{submitted === 1 ? '' : 's'} received</Body>
+      <MonthFilter value={selectedMonthKey} onChange={setSelectedMonthKey} currentMonthKey={currentMonthKey} />
+      <Body>{formatMonthLong(selectedMonthKey)} · {submitted} report{submitted === 1 ? '' : 's'} received</Body>
 
       {reports.error ? <Notice tone="bad" message={reports.error} /> : null}
       {loading ? <LoadingView /> : null}
       {!loading && !reports.error && !reports.data?.length ? (
-        <EmptyState title="No reports yet" message="Reports will appear here as members submit them." />
+        <EmptyState title="No reports yet" message={`No reports were submitted for ${formatMonthLong(selectedMonthKey)}.`} />
       ) : null}
 
       {(reports.data ?? []).map(report => (
