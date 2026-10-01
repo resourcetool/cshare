@@ -151,6 +151,24 @@ export async function getMyReport(uid: string, monthKey: string): Promise<Monthl
  * daily entries. A normal user cannot overwrite a submitted report; only an administrator can
  * correct an existing report.
  */
+export function updateReport(
+  reportIdValue: string,
+  patch: {
+    participated?: boolean;
+    hours?: number;
+    bibleStudies?: number;
+  },
+): Promise<CommitResult> {
+  return commit(
+    reports().doc(reportIdValue).update({
+      ...(patch.participated !== undefined ? { participated: patch.participated } : {}),
+      ...(patch.hours !== undefined ? { hours: patch.hours } : {}),
+      ...(patch.bibleStudies !== undefined ? { bibleStudies: patch.bibleStudies } : {}),
+      updatedAt: now(),
+    }),
+  );
+}
+
 export function submitReport(
   uid: string,
   monthKey: string,
