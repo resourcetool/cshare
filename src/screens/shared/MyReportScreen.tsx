@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
-import { Badge, Body, Button, Card, Heading, LoadingView, Notice, SwitchRow, Title } from '../../components/ui';
+import { Badge, Body, Button, Card, Chip, Heading, LoadingView, Notice, SwitchRow, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { saveDailyServiceEntry, subscribeToMyServiceEntries, subscribeToMyReport, submitReport } from '../../services/reportService';
 import { space, radius } from '../../theme';
-import { formatMonthLong, lastDayOfMonth, monthKeyFor, parseMonthKey, previousMonthKey, toDateKey } from '../../utils/dates';
+import { formatMonthLong, lastDayOfMonth, previousMonthKey, toDateKey } from '../../utils/dates';
 import { friendlyError, logError } from '../../utils/errors';
 import { hourReferenceFor, REPORTING_TYPE_LABELS, reportsHours, summarizeReport } from '../../utils/reports';
 import { FieldServiceEntry, MonthlyReport } from '../../types';
@@ -15,11 +15,6 @@ import { useTheme } from '../../context/ThemeContext';
 
 function localDateString(d: Date): string {
   return toDateKey(d);
-}
-
-function nextMonthKey(monthKey: string): string {
-  const { year, month } = parseMonthKey(monthKey);
-  return monthKeyFor(new Date(year, month + 1, 1));
 }
 
 function daysInMonth(monthKey: string): string[] {
@@ -53,31 +48,84 @@ function groupEntries(entries: FieldServiceEntry[]): Record<string, FieldService
   }, {});
 }
 
+function monthOptions(currentMonthKey: string, count = 24): string[] {
+  const months: string[] = [];
+  let key = currentMonthKey;
+  for (let i = 0; i < count; i += 1) {
+    months.push(key);
+    key = previousMonthKey(key);
+  }
+  return months;
+}
+
+function MonthFilter({
+  value,
+  onChange,
+  currentMonthKey,
+}: {
+  value: string;
+  onChange: (monthKey: string) => void;
+  currentMonthKey: string;
+}) {
+  const months = useMemo(() => monthOptions(currentMonthKey), [currentMonthKey]);
+
+  return (
+    <View style={{ marginBottom: space.md }}>
+      <Body style={{ marginBottom: space.xs }}>Report month</Body>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: space.xs, paddingRight: space.md }}
+      >
+        {months.map(monthKey => (
+          <Chip
+            key={monthKey}
+            label={monthKey === currentMonthKey ? `${formatMonthLong(monthKey)} · Current` : formatMonthLong(monthKey)}
+            selected={value === monthKey}
+            onPress={() => onChange(monthKey)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 export default function MyReportScreen() {
   const navigation = useNavigation();
   const { palette } = useTheme();
-  const { profile, settings, currentMonthKey } = useAppData();
+  const { profile, settings, currentMonthKey, myReportLoading } = useAppData();
   const type = profile.reportingType;
   const needsHours = reportsHours(type);
   const reference = hourReferenceFor(type, settings);
   const today = new Date();
   const todayKey = localDateString(today);
+  const previousKey = previousMonthKey(currentMonthKey);
 
-  // The report screen can now inspect any completed month. Future months are never selectable.
+  const previousReportLive = useLive<MonthlyReport | null>(
+    (ok, err) => subscribeToMyReport(profile.id, previousKey, ok, err),
+    [profile.id, previousKey],
+  );
+
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
-  const [showHelp, setShowHelp] = useState(false);
+  const [autoSelectedPrevious, setAutoSelectedPrevious] = useState(false);
 
+  // If a member reaches a new month without sending the previous month's report,
+  // keep the previous report on screen so it cannot silently disappear.
   useEffect(() => {
-    // If the app rolls into a new month while this screen is open, follow the new
-    // current month only when the user was already viewing the current month.
-    setSelectedMonthKey(previous => previous === currentMonthKey ? currentMonthKey : previous);
-  }, [currentMonthKey]);
+    if (!previousReportLive.loading && !previousReportLive.data && !autoSelectedPrevious) {
+      setSelectedMonthKey(previousKey);
+      setAutoSelectedPrevious(true);
+    }
+  }, [previousReportLive.loading, previousReportLive.data, previousKey, autoSelectedPrevious]);
 
   const selectedReportLive = useLive<MonthlyReport | null>(
     (ok, err) => subscribeToMyReport(profile.id, selectedMonthKey, ok, err),
     [profile.id, selectedMonthKey],
   );
 
+  // Daily entries are used only for the current month's pioneer workflow.
+  // For a past month, pioneers enter remembered totals directly instead of recreating
+  // the daily record day by day.
   const selectedEntriesLive = useLive<FieldServiceEntry[]>(
     (ok, err) => needsHours
       ? subscribeToMyServiceEntries(profile.id, selectedMonthKey, ok, err)
@@ -85,20 +133,13 @@ export default function MyReportScreen() {
     [profile.id, selectedMonthKey, needsHours],
   );
 
-  const activeReport = selectedReportLive.data;
-  const activeEntries = selectedEntriesLive.data ?? [];
-  const monthName = formatMonthLong(selectedMonthKey);
+  const selectedEntries = selectedEntriesLive.data ?? [];
+  const selectedReport = selectedReportLive.data;
+  const selectedMonthIsCurrent = selectedMonthKey === currentMonthKey;
+  const selectedMonthName = formatMonthLong(selectedMonthKey);
   const rows = useMemo(() => daysInMonth(selectedMonthKey), [selectedMonthKey]);
-  const byDate = useMemo(() => groupEntries(activeEntries), [activeEntries]);
-  const total = useMemo(() => totals(activeEntries), [activeEntries]);
-
-  const activeMonthIsCurrent = selectedMonthKey === currentMonthKey;
-  const futureMonth = selectedMonthKey > currentMonthKey;
-
-  // Current-month submission keeps the original restriction. A completed past
-  // month may be submitted now, which is what allows a late app recipient to
-  // catch up on an older month.
-  const canSubmit = !activeMonthIsCurrent || today.getDate() === lastDayOfMonth(currentMonthKey).getDate();
+  const byDate = useMemo(() => groupEntries(selectedEntries), [selectedEntries]);
+  const calculatedTotal = useMemo(() => totals(selectedEntries), [selectedEntries]);
 
   const [hours, setHours] = useState('');
   const [studies, setStudies] = useState('');
@@ -107,41 +148,42 @@ export default function MyReportScreen() {
   const [error, setError] = useState<string | null>(null);
   const [participated, setParticipated] = useState(false);
 
-  // For a past month with no daily entries, allow someone who received the app
-  // late to report the total they actually remember without inventing daily values.
-  const [useRememberedTotal, setUseRememberedTotal] = useState(false);
-  const [rememberedHours, setRememberedHours] = useState('');
-  const [rememberedStudies, setRememberedStudies] = useState('');
+  const [pastHours, setPastHours] = useState('');
+  const [pastStudies, setPastStudies] = useState('');
 
+  // Keep totals inputs aligned with the selected month's saved data.
   useEffect(() => {
-    setEditingDate(null);
-    setHours('');
-    setStudies('');
+    if (selectedReport) {
+      setPastHours(selectedReport.hours !== undefined ? String(selectedReport.hours) : '');
+      setPastStudies(selectedReport.bibleStudies !== undefined ? String(selectedReport.bibleStudies) : '');
+      setParticipated(selectedReport.participated === true);
+      return;
+    }
+
+    if (needsHours) {
+      setPastHours(String(calculatedTotal.hours));
+      setPastStudies(String(calculatedTotal.bibleStudies));
+    } else {
+      setPastHours('');
+      setPastStudies('');
+      setParticipated(false);
+    }
     setError(null);
-    setParticipated(false);
-    setUseRememberedTotal(false);
-    setRememberedHours('');
-    setRememberedStudies('');
-    setShowHelp(false);
-  }, [selectedMonthKey]);
+  }, [selectedReport, calculatedTotal.hours, calculatedTotal.bibleStudies, needsHours, selectedMonthKey]);
 
-  const canUseRememberedTotal =
-    needsHours &&
-    !activeMonthIsCurrent &&
-    !activeReport &&
-    activeEntries.length === 0;
+  const loading =
+    myReportLoading ||
+    previousReportLive.loading ||
+    selectedReportLive.loading ||
+    selectedEntriesLive.loading;
 
-  const helpType = activeReport?.reportingType ?? type;
-  const helpNeedsHours = reportsHours(helpType);
+  if (loading) {
+    return <Screen><LoadingView /></Screen>;
+  }
 
-  const goToPreviousMonth = () => {
-    setSelectedMonthKey(previousMonthKey(selectedMonthKey));
-  };
-
-  const goToNextMonth = () => {
-    const next = nextMonthKey(selectedMonthKey);
-    if (next <= currentMonthKey) setSelectedMonthKey(next);
-  };
+  const hasUnsentPreviousMonth = selectedMonthKey === previousKey && !previousReportLive.data;
+  const pastMonth = !selectedMonthIsCurrent;
+  const canSubmit = !selectedMonthIsCurrent || !needsHours || today.getDate() === lastDayOfMonth(currentMonthKey).getDate();
 
   const beginEdit = (dateKey: string) => {
     const entry = byDate[dateKey];
@@ -163,7 +205,12 @@ export default function MyReportScreen() {
     const existing = byDate[dateKey];
     const h = hours.trim() === '' ? (existing?.hours ?? 0) : Number(hours);
     const st = studies.trim() === '' ? (existing?.bibleStudies ?? 0) : Number(studies);
-    const isFuture = activeMonthIsCurrent && dateKey > todayKey;
+    const isFuture = selectedMonthIsCurrent && dateKey > todayKey;
+
+    if (!selectedMonthIsCurrent) {
+      setError('Past months use totals only. Enter the remembered monthly total below.');
+      return;
+    }
 
     if (isFuture) {
       setError('Future dates cannot be entered.');
@@ -204,64 +251,62 @@ export default function MyReportScreen() {
 
   const saveToday = () => saveEntry(todayKey);
 
+  const showHelp = () => {
+    const roleTitle = REPORTING_TYPE_LABELS[type];
+    const roleInstructions = needsHours
+      ? 'For the current month, record your activity by day. Your monthly hours and Bible studies are calculated from those entries. If you reach a past month without a report, enter the total hours and Bible studies you remember; you do not need to recreate each day.'
+      : 'For your report, indicate whether you had a part in the ministry and enter your Bible studies when applicable. If you need to complete a past month, use the totals-only form; you do not need to recreate daily activity.';
+
+    Alert.alert(
+      `${roleTitle} — Monthly Report`,
+      `${roleInstructions}\n\nUse Report month to look at another month. A report that has already been submitted is shown as read-only. If a submitted report needs correction, ask an administrator.\n\nIf you missed the previous month, CSHARE keeps that report available so you can complete it before continuing normally.`,
+    );
+  };
+
   const submit = async () => {
-    if (activeReport) {
-      setError('This report has already been sent in. Ask an administrator if a correction is needed.');
-      return;
-    }
-
-    if (futureMonth) {
-      setError('Future months cannot be reported.');
-      return;
-    }
-
     if (!canSubmit) {
-      setError(`You can submit ${monthName} on the last day of the month.`);
+      setError(`You can submit ${selectedMonthName} on the last day of the month.`);
       return;
     }
 
-    let reportHours: number | undefined;
-    let reportStudies: number | undefined;
+    let input;
 
-    // Publishers and Baptized Publishers must enter Bible studies when
-    // they say they had a part in the ministry. Zero is a valid value.
-    if (!needsHours && participated) {
-      if (studies.trim() === '') {
+    if (needsHours) {
+      const sourceHours = selectedMonthIsCurrent ? calculatedTotal.hours : Number(pastHours);
+      const sourceStudies = selectedMonthIsCurrent ? calculatedTotal.bibleStudies : Number(pastStudies);
+
+      if (!Number.isFinite(sourceHours) || sourceHours < 0 || sourceHours > 750) {
+        setError('Enter total hours from 0 to 750.');
+        return;
+      }
+
+      if (!Number.isInteger(sourceStudies) || sourceStudies < 0 || sourceStudies > 200) {
+        setError('Enter total Bible studies from 0 to 200.');
+        return;
+      }
+
+      input = {
+        reportingType: type,
+        hours: sourceHours,
+        bibleStudies: sourceStudies,
+      } as const;
+    } else {
+      if (participated && pastStudies.trim() === '') {
         setError('Enter the number of Bible studies before submitting.');
         return;
       }
 
-      const studyCount = Number(studies);
-
+      const studyCount = participated ? Number(pastStudies) : 0;
       if (!Number.isInteger(studyCount) || studyCount < 0 || studyCount > 200) {
         setError('Enter Bible studies from 0 to 200.');
         return;
       }
 
-      reportStudies = studyCount;
-    }
-
-    if (needsHours) {
-      if (useRememberedTotal) {
-        const h = Number(rememberedHours);
-        const st = Number(rememberedStudies);
-
-        if (!Number.isFinite(h) || h < 0 || h > 750) {
-          setError('Enter remembered hours from 0 to 750.');
-          return;
-        }
-
-        if (!Number.isInteger(st) || st < 0 || st > 200) {
-          setError('Enter Bible studies from 0 to 200.');
-          return;
-        }
-
-        reportHours = h;
-        reportStudies = st;
-      } else {
-        reportHours = total.hours;
-        reportStudies = total.bibleStudies;
-      }
+      input = {
+        reportingType: type,
+        participated,
+        ...(participated ? { bibleStudies: studyCount } : {}),
+      } as const;
     }
 
     setBusy(true);
@@ -271,17 +316,7 @@ export default function MyReportScreen() {
       const result = await submitReport(
         profile.id,
         selectedMonthKey,
-        needsHours
-          ? {
-              reportingType: type,
-              hours: reportHours ?? 0,
-              bibleStudies: reportStudies ?? 0,
-            }
-          : {
-              reportingType: type,
-              participated,
-              ...(participated ? { bibleStudies: reportStudies ?? 0 } : {}),
-            },
+        input,
         {
           groupId: profile.groupId,
           reporterName: profile.name,
@@ -291,7 +326,11 @@ export default function MyReportScreen() {
       if (result === 'queued') {
         setError('Saved on this phone. It will be sent when you have internet.');
       } else {
-        navigation.goBack();
+        // If the member just completed the overdue month, move them to the current month.
+        if (selectedMonthKey === previousKey && !previousReportLive.data) {
+          setSelectedMonthKey(currentMonthKey);
+          setAutoSelectedPrevious(true);
+        }
       }
     } catch (e) {
       logError('submit report', e);
@@ -301,463 +340,150 @@ export default function MyReportScreen() {
     }
   };
 
-  const renderMonthFilter = () => (
-    <Card style={{ marginBottom: space.md }}>
-      <Heading>Report month</Heading>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginTop: space.sm,
-        }}
-      >
-        <Button
-          label="Previous"
-          variant="secondary"
-          onPress={goToPreviousMonth}
-          disabled={busy}
-          style={{ flex: 1, marginRight: space.xs }}
-        />
-
-        <View style={{ flex: 1.4, alignItems: 'center' }}>
-          <Text
-            style={{
-              color: palette.ink,
-              fontSize: 16,
-              fontWeight: '800',
-              textAlign: 'center',
-            }}
-          >
-            {monthName}
-          </Text>
-
-          {activeMonthIsCurrent ? <Badge label="CURRENT" tone="info" /> : null}
-        </View>
-
-        <Button
-          label="Next"
-          variant="secondary"
-          onPress={goToNextMonth}
-          disabled={busy || selectedMonthKey >= currentMonthKey}
-          style={{ flex: 1, marginLeft: space.xs }}
-        />
-      </View>
-
-      {!activeMonthIsCurrent ? (
-        <Button
-          label="Back to current month"
-          variant="ghost"
-          onPress={() => setSelectedMonthKey(currentMonthKey)}
-          disabled={busy}
-          style={{ marginTop: space.xs }}
-        />
-      ) : null}
-    </Card>
-  );
-
-  const renderHelp = () => (
-    <Card style={{ marginBottom: space.lg }}>
-      <Heading>How to use your monthly report</Heading>
-
-      {helpNeedsHours ? (
-        <>
-          <Body style={{ marginTop: space.sm }}>
-            You are reporting as a pioneer. Select the month you want to review, then enter or edit the daily hours and Bible studies for that month.
-          </Body>
-          <Body style={{ marginTop: space.sm }}>
-            If you received the app late and have no daily entries for an older month, you can use the remembered monthly total option instead of making up individual daily figures.
-          </Body>
-          <Body style={{ marginTop: space.sm }}>
-            Past months can be submitted once the information is complete. Future dates cannot be entered.
-          </Body>
-        </>
-      ) : (
-        <>
-          <Body style={{ marginTop: space.sm }}>
-            Select the month you want to review. For a publisher or baptized publisher, indicate whether you shared in the ministry and enter your Bible studies when applicable.
-          </Body>
-          <Body style={{ marginTop: space.sm }}>
-            If you received the app late, you can select an older month and submit the information you remember for that month.
-          </Body>
-          <Body style={{ marginTop: space.sm }}>
-            A report that has already been sent in cannot be changed from this screen. Ask an administrator if a correction is needed.
-          </Body>
-        </>
-      )}
-    </Card>
-  );
-
-  if (selectedReportLive.loading || selectedEntriesLive.loading) {
-    return <Screen><LoadingView /></Screen>;
-  }
-
-  if (activeReport) {
-    return (
-      <Screen>
-        {renderMonthFilter()}
-
-        <Button
-          label={showHelp ? 'Hide help' : 'How to use'}
-          variant="secondary"
-          onPress={() => setShowHelp(value => !value)}
-          style={{ marginBottom: space.md }}
-        />
-
-        {showHelp ? renderHelp() : null}
-
-        <Title>{monthName}</Title>
-        <Body style={{ marginBottom: space.lg }}>Your report for this month has been sent in.</Body>
-
-        <Card>
-          <Badge label="Submitted" tone="good" />
-          <Heading style={{ marginTop: space.sm }}>{REPORTING_TYPE_LABELS[activeReport.reportingType]}</Heading>
-          <Body style={{ marginTop: space.xs }}>{summarizeReport(activeReport.reportingType, activeReport)}</Body>
-        </Card>
-
-        <Notice
-          tone="info"
-          message="Need to change something in a submitted report? Ask an administrator. Your existing role restrictions remain in place."
-        />
-      </Screen>
-    );
-  }
-
   return (
-    <Screen footer={<Button label="Submit monthly report" onPress={submit} loading={busy} disabled={busy || !canSubmit || futureMonth} />}>
-      {renderMonthFilter()}
-
-      <Button
-        label={showHelp ? 'Hide help' : 'How to use'}
-        variant="secondary"
-        onPress={() => setShowHelp(value => !value)}
-        style={{ marginBottom: space.md }}
-      />
-
-      {showHelp ? renderHelp() : null}
-
-      <Title>{monthName}</Title>
+    <Screen footer={<Button label="Submit monthly report" onPress={submit} loading={busy} disabled={busy || !canSubmit || !!selectedReport} />}>
+      <Title>{selectedMonthName}</Title>
 
       <Body style={{ marginBottom: space.md }}>
         Reporting as: {REPORTING_TYPE_LABELS[type]}
       </Body>
 
-      {activeMonthIsCurrent && !canSubmit ? (
+      <MonthFilter
+        value={selectedMonthKey}
+        onChange={(monthKey) => {
+          if (busy) return;
+          setSelectedMonthKey(monthKey);
+          setEditingDate(null);
+          setError(null);
+        }}
+        currentMonthKey={currentMonthKey}
+      />
+
+      <Button
+        label="How to use this report"
+        variant="secondary"
+        onPress={showHelp}
+        disabled={busy}
+        style={{ marginBottom: space.md }}
+      />
+
+      {selectedMonthIsCurrent && !canSubmit ? (
         <Notice
           tone="info"
           message={`Keep recording your daily activity. Submission opens on ${formatMonthLong(currentMonthKey)}'s last day.`}
         />
       ) : null}
 
-      {!activeMonthIsCurrent ? (
+      {pastMonth && !selectedReport ? (
         <Notice
-          tone="warn"
-          message="You are viewing a previous month. You can complete and submit it now if it has not already been sent in."
+          tone={hasUnsentPreviousMonth ? 'warn' : 'info'}
+          message={
+            hasUnsentPreviousMonth
+              ? `Your ${selectedMonthName} report has not been sent yet. Complete it now before continuing with the new month.`
+              : `This is a past month. You can complete or review the report using monthly totals only.`
+          }
         />
+      ) : null}
+
+      {selectedReport ? (
+        <>
+          <Card>
+            <Badge label="Submitted" tone="good" />
+            <Heading style={{ marginTop: space.sm }}>{REPORTING_TYPE_LABELS[selectedReport.reportingType]}</Heading>
+            <Body style={{ marginTop: space.xs }}>{summarizeReport(selectedReport.reportingType, selectedReport)}</Body>
+          </Card>
+          <Body>
+            This report has already been sent. Members cannot overwrite a submitted report; ask an administrator if a correction is needed.
+          </Body>
+        </>
       ) : null}
 
       {error ? (
-        <Notice
-          tone={error.startsWith('Saved') ? 'info' : 'bad'}
-          message={error}
-        />
+        <Notice tone={error.startsWith('Saved') ? 'info' : 'bad'} message={error} />
       ) : null}
 
-      {needsHours ? (
-        <>
-          <Card style={{ marginBottom: space.lg }}>
-            <Heading>Month total</Heading>
-
-            <Body style={{ marginTop: space.xs }}>
-              {useRememberedTotal ? `${rememberedHours || 0} hour${Number(rememberedHours) === 1 ? '' : 's'} · ${rememberedStudies || 0} Bible ${Number(rememberedStudies) === 1 ? 'study' : 'studies'}` : `${total.hours} hour${total.hours === 1 ? '' : 's'} · ${total.bibleStudies} Bible ${total.bibleStudies === 1 ? 'study' : 'studies'}`}
-            </Body>
-
-            {reference ? (
-              <Body style={{ marginTop: space.xs }}>
-                Reference: {reference} hours. This is a minimum, not a maximum.
-              </Body>
-            ) : null}
-          </Card>
-
-          {canUseRememberedTotal ? (
-            <Card style={{ marginBottom: space.lg }}>
-              <SwitchRow
-                label="I only remember my monthly total"
-                value={useRememberedTotal}
-                onValueChange={(value) => {
-                  setUseRememberedTotal(value);
-                  setError(null);
-                  if (!value) {
-                    setRememberedHours('');
-                    setRememberedStudies('');
-                  }
-                }}
-                disabled={busy}
-              />
-
-              {useRememberedTotal ? (
-                <>
-                  <Body style={{ marginTop: space.sm }}>
-                    Enter the total you remember for this month. Use this only when there are no daily entries to recover.
-                  </Body>
-
-                  <View style={{ flexDirection: 'row', marginTop: space.md }}>
-                    <View style={{ flex: 1, marginRight: space.xs }}>
-                      <Body style={{ marginBottom: space.xs }}>Hours</Body>
-                      <TextInput
-                        value={rememberedHours}
-                        onChangeText={setRememberedHours}
-                        placeholder="0"
-                        placeholderTextColor={palette.placeholder}
-                        keyboardType="decimal-pad"
-                        editable={!busy}
-                        style={{
-                          minHeight: 48,
-                          borderWidth: 1.5,
-                          borderColor: palette.primary,
-                          borderRadius: radius.md,
-                          paddingHorizontal: space.md,
-                          color: palette.ink,
-                          backgroundColor: palette.surface,
-                          fontSize: 16,
-                        }}
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, marginLeft: space.xs }}>
-                      <Body style={{ marginBottom: space.xs }}>Bible studies</Body>
-                      <TextInput
-                        value={rememberedStudies}
-                        onChangeText={setRememberedStudies}
-                        placeholder="0"
-                        placeholderTextColor={palette.placeholder}
-                        keyboardType="number-pad"
-                        editable={!busy}
-                        style={{
-                          minHeight: 48,
-                          borderWidth: 1.5,
-                          borderColor: palette.primary,
-                          borderRadius: radius.md,
-                          paddingHorizontal: space.md,
-                          color: palette.ink,
-                          backgroundColor: palette.surface,
-                          fontSize: 16,
-                        }}
-                      />
-                    </View>
-                  </View>
-                </>
-              ) : null}
-            </Card>
-          ) : null}
-
-          {!useRememberedTotal ? (
-            <Card style={{ padding: 0, overflow: 'hidden', marginBottom: space.lg }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  padding: space.md,
-                  backgroundColor: palette.surfaceAlt,
-                  borderBottomWidth: 1,
-                  borderBottomColor: palette.line,
-                }}
-              >
-                <Text style={{ flex: 1.3, fontWeight: '700', color: palette.ink }}>
-                  Date
-                </Text>
-
-                <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>
-                  Hours
-                </Text>
-
-                <Text style={{ flex: 0.8, textAlign: 'center', fontWeight: '700', color: palette.ink }}>
-                  Studies
-                </Text>
-
-                <Text style={{ width: 74, textAlign: 'right', fontWeight: '700', color: palette.ink }}>
-                  Action
-                </Text>
-              </View>
-
-              {rows.map(dateKey => {
-                const entry = byDate[dateKey];
-                const isToday = dateKey === todayKey && activeMonthIsCurrent;
-                const isFuture = activeMonthIsCurrent && dateKey > todayKey;
-                const isEditing = isToday || editingDate === dateKey;
-                const canEdit = !isFuture;
-
-                return (
-                  <View
-                    key={dateKey}
-                    style={{
-                      paddingHorizontal: space.md,
-                      paddingVertical: space.sm,
-                      borderBottomWidth: 1,
-                      borderBottomColor: palette.line,
-                      backgroundColor: isToday ? palette.primarySoft : 'transparent',
-                    }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        minHeight: 54,
-                      }}
-                    >
-                      <View style={{ flex: 1.25 }}>
-                        <Text
-                          style={{
-                            fontWeight: isToday ? '800' : '500',
-                            color: isFuture ? palette.muted : palette.ink,
-                          }}
-                        >
-                          {displayDay(dateKey)}
-                        </Text>
-
-                        {isToday ? <Badge label="TODAY" tone="info" /> : null}
-                      </View>
-
-                      <View style={{ flex: 0.8, alignItems: 'center' }}>
-                        {isEditing ? (
-                          <TextInput
-                            value={hours}
-                            onChangeText={setHours}
-                            placeholder={entry ? String(entry.hours) : '0'}
-                            placeholderTextColor={palette.placeholder}
-                            keyboardType="decimal-pad"
-                            style={{
-                              width: 58,
-                              minHeight: 44,
-                              borderWidth: 1.5,
-                              borderColor: palette.primary,
-                              borderRadius: radius.md,
-                              textAlign: 'center',
-                              color: palette.ink,
-                              backgroundColor: palette.surface,
-                              fontSize: 16,
-                            }}
-                          />
-                        ) : (
-                          <Text
-                            style={{
-                              color: isFuture ? palette.muted : palette.ink,
-                              fontSize: 17,
-                            }}
-                          >
-                            {entry?.hours ?? '—'}
-                          </Text>
-                        )}
-                      </View>
-
-                      <View style={{ flex: 0.8, alignItems: 'center' }}>
-                        {isEditing ? (
-                          <TextInput
-                            value={studies}
-                            onChangeText={setStudies}
-                            placeholder={entry ? String(entry.bibleStudies) : '0'}
-                            placeholderTextColor={palette.placeholder}
-                            keyboardType="number-pad"
-                            style={{
-                              width: 58,
-                              minHeight: 44,
-                              borderWidth: 1.5,
-                              borderColor: palette.primary,
-                              borderRadius: radius.md,
-                              textAlign: 'center',
-                              color: palette.ink,
-                              backgroundColor: palette.surface,
-                              fontSize: 16,
-                            }}
-                          />
-                        ) : (
-                          <Text
-                            style={{
-                              color: isFuture ? palette.muted : palette.ink,
-                              fontSize: 17,
-                            }}
-                          >
-                            {entry?.bibleStudies ?? '—'}
-                          </Text>
-                        )}
-                      </View>
-
-                      <View style={{ width: 74, alignItems: 'flex-end' }}>
-                        {!isEditing && canEdit ? (
-                          <Button
-                            label="Edit"
-                            variant="secondary"
-                            onPress={() => beginEdit(dateKey)}
-                            disabled={busy}
-                          />
-                        ) : null}
-                      </View>
-                    </View>
-
-                    {isEditing && !isToday ? (
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          marginTop: space.xs,
-                          paddingLeft: space.xs,
-                        }}
-                      >
-                        <Button
-                          label="Save changes"
-                          onPress={() => saveEntry(dateKey)}
-                          loading={busy}
-                          disabled={busy}
-                          style={{ flex: 1, marginRight: space.xs }}
-                        />
-
-                        <Button
-                          label="Cancel"
-                          variant="secondary"
-                          onPress={cancelEdit}
-                          disabled={busy}
-                          style={{ flex: 1, marginLeft: space.xs }}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </Card>
-          ) : null}
-
-          {activeMonthIsCurrent && !useRememberedTotal ? (
-            <Button
-              label="Save today's entry"
-              onPress={saveToday}
-              loading={busy}
-              disabled={busy}
-            />
-          ) : null}
-        </>
-      ) : (
+      {!selectedReport && needsHours && pastMonth ? (
         <Card>
+          <Heading>Past month totals</Heading>
+          <Body style={{ marginTop: space.xs }}>
+            Enter the totals you remember for {selectedMonthName}. You do not need to recreate each day's activity.
+          </Body>
+
+          <Body style={{ marginTop: space.md, marginBottom: space.xs }}>Total hours</Body>
+          <TextInput
+            value={pastHours}
+            onChangeText={setPastHours}
+            placeholder="Total hours"
+            placeholderTextColor={palette.placeholder}
+            keyboardType="decimal-pad"
+            editable={!busy}
+            style={{
+              minHeight: 48,
+              borderWidth: 1.5,
+              borderColor: palette.primary,
+              borderRadius: radius.md,
+              paddingHorizontal: space.md,
+              color: palette.ink,
+              backgroundColor: palette.surface,
+              fontSize: 16,
+            }}
+          />
+
+          <Body style={{ marginTop: space.md, marginBottom: space.xs }}>Bible studies</Body>
+          <TextInput
+            value={pastStudies}
+            onChangeText={setPastStudies}
+            placeholder="Bible studies"
+            placeholderTextColor={palette.placeholder}
+            keyboardType="number-pad"
+            editable={!busy}
+            style={{
+              minHeight: 48,
+              borderWidth: 1.5,
+              borderColor: palette.primary,
+              borderRadius: radius.md,
+              paddingHorizontal: space.md,
+              color: palette.ink,
+              backgroundColor: palette.surface,
+              fontSize: 16,
+            }}
+          />
+
+          {reference ? (
+            <Body style={{ marginTop: space.xs }}>
+              Reference: {reference} hours. This is a minimum, not a maximum.
+            </Body>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {!selectedReport && !needsHours && pastMonth ? (
+        <Card>
+          <Heading>Past month report</Heading>
+          <Body style={{ marginTop: space.xs }}>
+            Record what applied to {selectedMonthName}. You do not need to recreate daily entries.
+          </Body>
+
           <SwitchRow
             label="I had a part in the ministry"
             value={participated}
             onValueChange={(value) => {
               setParticipated(value);
-              if (!value) setStudies('');
+              if (!value) setPastStudies('');
             }}
-            disabled={!canSubmit || busy}
+            disabled={busy}
           />
 
           {participated ? (
             <View style={{ marginTop: space.md }}>
-              <Body style={{ marginBottom: space.xs }}>
-                Bible studies
-              </Body>
-
+              <Body style={{ marginBottom: space.xs }}>Bible studies</Body>
               <TextInput
-                value={studies}
-                onChangeText={setStudies}
+                value={pastStudies}
+                onChangeText={setPastStudies}
                 placeholder="Enter number"
                 placeholderTextColor={palette.placeholder}
                 keyboardType="number-pad"
-                editable={!busy && canSubmit}
+                editable={!busy}
                 style={{
                   minHeight: 48,
                   borderWidth: 1.5,
@@ -769,14 +495,149 @@ export default function MyReportScreen() {
                   fontSize: 16,
                 }}
               />
-
-              <Body style={{ marginTop: space.xs }}>
-                Enter 0 if you did not conduct any Bible studies.
-              </Body>
+              <Body style={{ marginTop: space.xs }}>Enter 0 if you did not conduct any Bible studies.</Body>
             </View>
           ) : null}
         </Card>
-      )}
+      ) : null}
+
+      {!selectedReport && needsHours && selectedMonthIsCurrent ? (
+        <>
+          <Card style={{ marginBottom: space.lg }}>
+            <Heading>Month total</Heading>
+            <Body style={{ marginTop: space.xs }}>
+              {calculatedTotal.hours} hour{calculatedTotal.hours === 1 ? '' : 's'} · {calculatedTotal.bibleStudies} Bible {calculatedTotal.bibleStudies === 1 ? 'study' : 'studies'}
+            </Body>
+            {reference ? (
+              <Body style={{ marginTop: space.xs }}>
+                Reference: {reference} hours. This is a minimum, not a maximum.
+              </Body>
+            ) : null}
+          </Card>
+
+          <Card style={{ padding: 0, overflow: 'hidden', marginBottom: space.lg }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                padding: space.md,
+                backgroundColor: palette.surfaceAlt,
+                borderBottomWidth: 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Text style={{ flex: 1.3, fontWeight: '700', color: palette.ink }}>Date</Text>
+              <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Hours</Text>
+              <Text style={{ flex: 0.8, textAlign: 'center', fontWeight: '700', color: palette.ink }}>Studies</Text>
+              <Text style={{ width: 74, textAlign: 'right', fontWeight: '700', color: palette.ink }}>Action</Text>
+            </View>
+
+            {rows.map(dateKey => {
+              const entry = byDate[dateKey];
+              const isToday = dateKey === todayKey;
+              const isFuture = dateKey > todayKey;
+              const isEditing = isToday || editingDate === dateKey;
+              const canEdit = !isFuture;
+
+              return (
+                <View
+                  key={dateKey}
+                  style={{
+                    paddingHorizontal: space.md,
+                    paddingVertical: space.sm,
+                    borderBottomWidth: 1,
+                    borderBottomColor: palette.line,
+                    backgroundColor: isToday ? palette.primarySoft : 'transparent',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 54 }}>
+                    <View style={{ flex: 1.25 }}>
+                      <Text style={{ fontWeight: isToday ? '800' : '500', color: isFuture ? palette.muted : palette.ink }}>
+                        {displayDay(dateKey)}
+                      </Text>
+                      {isToday ? <Badge label="TODAY" tone="info" /> : null}
+                    </View>
+
+                    <View style={{ flex: 0.8, alignItems: 'center' }}>
+                      {isEditing ? (
+                        <TextInput
+                          value={hours}
+                          onChangeText={setHours}
+                          placeholder={entry ? String(entry.hours) : '0'}
+                          placeholderTextColor={palette.placeholder}
+                          keyboardType="decimal-pad"
+                          style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }}
+                        />
+                      ) : (
+                        <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.hours ?? '—'}</Text>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 0.8, alignItems: 'center' }}>
+                      {isEditing ? (
+                        <TextInput
+                          value={studies}
+                          onChangeText={setStudies}
+                          placeholder={entry ? String(entry.bibleStudies) : '0'}
+                          placeholderTextColor={palette.placeholder}
+                          keyboardType="number-pad"
+                          style={{ width: 58, minHeight: 44, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, textAlign: 'center', color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }}
+                        />
+                      ) : (
+                        <Text style={{ color: isFuture ? palette.muted : palette.ink, fontSize: 17 }}>{entry?.bibleStudies ?? '—'}</Text>
+                      )}
+                    </View>
+
+                    <View style={{ width: 74, alignItems: 'flex-end' }}>
+                      {!isEditing && canEdit ? (
+                        <Button label="Edit" variant="secondary" onPress={() => beginEdit(dateKey)} disabled={busy} />
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {isEditing && !isToday ? (
+                    <View style={{ flexDirection: 'row', marginTop: space.xs, paddingLeft: space.xs }}>
+                      <Button label="Save changes" onPress={() => saveEntry(dateKey)} loading={busy} disabled={busy} style={{ flex: 1, marginRight: space.xs }} />
+                      <Button label="Cancel" variant="secondary" onPress={cancelEdit} disabled={busy} style={{ flex: 1, marginLeft: space.xs }} />
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </Card>
+
+          <Button label="Save today's entry" onPress={saveToday} loading={busy} disabled={busy} />
+        </>
+      ) : null}
+
+      {!selectedReport && !needsHours && selectedMonthIsCurrent ? (
+        <Card>
+          <SwitchRow
+            label="I had a part in the ministry"
+            value={participated}
+            onValueChange={(value) => {
+              setParticipated(value);
+              if (!value) setPastStudies('');
+            }}
+            disabled={busy}
+          />
+
+          {participated ? (
+            <View style={{ marginTop: space.md }}>
+              <Body style={{ marginBottom: space.xs }}>Bible studies</Body>
+              <TextInput
+                value={pastStudies}
+                onChangeText={setPastStudies}
+                placeholder="Enter number"
+                placeholderTextColor={palette.placeholder}
+                keyboardType="number-pad"
+                editable={!busy}
+                style={{ minHeight: 48, borderWidth: 1.5, borderColor: palette.primary, borderRadius: radius.md, paddingHorizontal: space.md, color: palette.ink, backgroundColor: palette.surface, fontSize: 16 }}
+              />
+              <Body style={{ marginTop: space.xs }}>Enter 0 if you did not conduct any Bible studies.</Body>
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
     </Screen>
   );
 }
