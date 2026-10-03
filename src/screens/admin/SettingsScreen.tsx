@@ -91,16 +91,7 @@ export default function SettingsScreen() {
     const versionCode = Number(updateCode);
     if (!updateVersion.trim()) return setUpdateNotice({ tone: 'bad', text: 'Enter the version name.' });
     if (!Number.isInteger(versionCode) || versionCode < 1) return setUpdateNotice({ tone: 'bad', text: 'Version code must be a whole number.' });
-    const normalizedUpdateUrl = updateUrl.trim();
-    let parsedUpdateUrl: URL;
-    try {
-      parsedUpdateUrl = new URL(normalizedUpdateUrl);
-    } catch {
-      return setUpdateNotice({ tone: 'bad', text: 'Enter a valid universal download link.' });
-    }
-    if (parsedUpdateUrl.protocol !== 'https:' && parsedUpdateUrl.protocol !== 'http:') {
-      return setUpdateNotice({ tone: 'bad', text: 'The download link must start with http:// or https://.' });
-    }
+    if (!updateUrl.trim().startsWith('http')) return setUpdateNotice({ tone: 'bad', text: 'Paste a valid universal download link.' });
     setUpdateBusy(true);
     setUpdateNotice(null);
     try {
@@ -292,7 +283,7 @@ export default function SettingsScreen() {
         <Group title="Developer">
           <SectionTitle>App update</SectionTitle>
           <Small style={{ marginBottom: space.md }}>
-            Host the new APK anywhere users can access it, then paste the universal download link here, set the version, and turn the update on. Users will see the update card on their home screen.
+            Host the new APK anywhere with a public direct download link, paste the universal link here, set the version, then turn the update on. Users will see the update card on their home screen.
           </Small>
           {updateNotice ? <Notice tone={updateNotice.tone} message={updateNotice.text} /> : null}
           <TextField label="Version name" value={updateVersion} onChangeText={setUpdateVersion} placeholder="For example: 1.1" />
@@ -301,7 +292,7 @@ export default function SettingsScreen() {
           <TextField label="Update message" value={updateMessage} onChangeText={setUpdateMessage} multiline />
           <SwitchRow
             label="Show update to users"
-            description="Turn this on only after the APK is publicly accessible from the download link above."
+            description="Turn this on only after the APK is publicly available at the download link."
             value={updateAvailable}
             onValueChange={setUpdateAvailable}
             disabled={updateBusy}
