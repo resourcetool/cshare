@@ -91,7 +91,16 @@ export default function SettingsScreen() {
     const versionCode = Number(updateCode);
     if (!updateVersion.trim()) return setUpdateNotice({ tone: 'bad', text: 'Enter the version name.' });
     if (!Number.isInteger(versionCode) || versionCode < 1) return setUpdateNotice({ tone: 'bad', text: 'Version code must be a whole number.' });
-    if (!updateUrl.trim().startsWith('http')) return setUpdateNotice({ tone: 'bad', text: 'Paste the Google Drive sharing link.' });
+    const normalizedUpdateUrl = updateUrl.trim();
+    let parsedUpdateUrl: URL;
+    try {
+      parsedUpdateUrl = new URL(normalizedUpdateUrl);
+    } catch {
+      return setUpdateNotice({ tone: 'bad', text: 'Enter a valid universal download link.' });
+    }
+    if (parsedUpdateUrl.protocol !== 'https:' && parsedUpdateUrl.protocol !== 'http:') {
+      return setUpdateNotice({ tone: 'bad', text: 'The download link must start with http:// or https://.' });
+    }
     setUpdateBusy(true);
     setUpdateNotice(null);
     try {
@@ -283,16 +292,16 @@ export default function SettingsScreen() {
         <Group title="Developer">
           <SectionTitle>App update</SectionTitle>
           <Small style={{ marginBottom: space.md }}>
-            Upload the new APK to Google Drive, paste its sharing link here, set the version, then turn the update on. Users will see the update card on their home screen.
+            Host the new APK anywhere users can access it, then paste the universal download link here, set the version, and turn the update on. Users will see the update card on their home screen.
           </Small>
           {updateNotice ? <Notice tone={updateNotice.tone} message={updateNotice.text} /> : null}
           <TextField label="Version name" value={updateVersion} onChangeText={setUpdateVersion} placeholder="For example: 1.1" />
           <TextField label="Version code" value={updateCode} onChangeText={setUpdateCode} keyboardType="number-pad" placeholder="For example: 2" />
-          <TextField label="Google Drive APK link" value={updateUrl} onChangeText={setUpdateUrl} autoCapitalize="none" keyboardType="url" placeholder="https://drive.google.com/..." />
+          <TextField label="Universal APK download link" value={updateUrl} onChangeText={setUpdateUrl} autoCapitalize="none" keyboardType="url" placeholder="https://example.com/cshare.apk" />
           <TextField label="Update message" value={updateMessage} onChangeText={setUpdateMessage} multiline />
           <SwitchRow
             label="Show update to users"
-            description="Turn this on only after the APK is already in Google Drive."
+            description="Turn this on only after the APK is publicly accessible from the download link above."
             value={updateAvailable}
             onValueChange={setUpdateAvailable}
             disabled={updateBusy}
