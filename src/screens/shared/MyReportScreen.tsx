@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, TextInput, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../../components/Screen';
 import { Badge, Body, Button, Card, Chip, Heading, LoadingView, Notice, SwitchRow, Title } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
@@ -91,7 +90,6 @@ function MonthFilter({
 }
 
 export default function MyReportScreen() {
-  const navigation = useNavigation();
   const { palette } = useTheme();
   const { profile, settings, currentMonthKey, myReportLoading } = useAppData();
   const type = profile.reportingType;
