@@ -24,8 +24,6 @@ import { useTheme } from '../../context/ThemeContext';
 import { subscribeToGroups } from '../../services/groupService';
 import {
   sendEmergencyEmail,
-  EMAIL_SEND_INTERVAL_MS,
-  wait,
 } from '../../services/emailService';
 import { subscribeToUsers } from '../../services/userService';
 import { MinistryGroup, UserProfile } from '../../types';
@@ -227,84 +225,33 @@ export default function EmergencyEmailScreen() {
     setProgress(0);
     setNotice(null);
 
-    let sent = 0;
-
-    const failed: string[] = [];
-
     try {
-      for (
-        let i = 0;
-        i < recipients.length;
-        i += 1
-      ) {
-        const recipient =
-          recipients[i];
+      await sendEmergencyEmail({
+        recipients,
+        subject: subject.trim(),
+        message: message.trim(),
+        senderName: profile.name,
+        replyTo: profile.email,
+      });
 
-        try {
-          await sendEmergencyEmail({
-            recipient,
-            subject: subject.trim(),
-            message: message.trim(),
-            senderName: profile.name,
-            replyTo: profile.email,
-          });
+      setProgress(1);
+      setNotice({
+        tone: 'good',
+        text:
+          `Emergency email submitted successfully for all ${recipients.length} selected recipients. Their addresses were added as BCC and are hidden from one another.`,
+      });
+      setMessage('');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : String(error);
 
-          sent += 1;
-        } catch (error) {
-          /*
-           * IMPORTANT:
-           *
-           * We intentionally do NOT use friendlyError()
-           * here because it hides the real EmailJS error.
-           *
-           * This will show us the exact response returned
-           * by EmailJS, including HTTP status.
-           */
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : String(error);
-
-          failed.push(
-            `${recipient.name}: ${errorMessage}`,
-          );
-        }
-
-        setProgress(i + 1);
-
-        /*
-         * EmailJS rate limit protection.
-         */
-        if (
-          i <
-          recipients.length - 1
-        ) {
-          await wait(
-            EMAIL_SEND_INTERVAL_MS,
-          );
-        }
-      }
-
-      if (failed.length === 0) {
-        setNotice({
-          tone: 'good',
-          text:
-            `Emergency email sent to all ${sent} selected ${
-              sent === 1
-                ? 'recipient'
-                : 'recipients'
-            }.`,
-        });
-
-        setMessage('');
-      } else {
-        setNotice({
-          tone: 'bad',
-          text:
-            `${sent} sent successfully; ${failed.length} failed.\n\n` +
-            failed.join('\n'),
-        });
-      }
+      setNotice({
+        tone: 'bad',
+        text:
+          `The emergency email could not be sent. No successful delivery is confirmed. ${errorMessage}`,
+      });
     } finally {
       setSending(false);
     }
@@ -785,7 +732,7 @@ export default function EmergencyEmailScreen() {
             }}
           >
             {sending
-              ? `${progress} / ${recipients.length}`
+              ? `${progress} / 1 email`
               : recipients.length}
           </Body>
         </View>
@@ -796,17 +743,14 @@ export default function EmergencyEmailScreen() {
               space.sm,
           }}
         >
-          Each recipient receives a
-          separate email. Their email
-          address is not exposed to other
-          recipients.
+          One email is sent to the group. All selected members are added as BCC, so their email addresses stay hidden from one another.
         </Small>
       </Card>
 
       <Button
         label={
           sending
-            ? `Sending ${progress} of ${recipients.length}…`
+            ? 'Sending group email…'
             : 'Send emergency email'
         }
         onPress={send}
