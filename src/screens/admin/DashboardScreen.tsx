@@ -12,7 +12,8 @@ import { useLive } from '../../hooks/useLive';
 import { AdminNav } from '../../navigation/types';
 import { subscribeToUpcoming } from '../../services/assignmentService';
 import { subscribeToUsers } from '../../services/userService';
-import { Assignment, UserProfile } from '../../types';
+import { subscribeToGroups } from '../../services/groupService';
+import { Assignment, MinistryGroup, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, space } from '../../theme';
 import { callNumber, textNumber } from '../../utils/contact';
@@ -27,6 +28,8 @@ export default function DashboardScreen() {
   const { profile, settings, currentMonthKey, myReport, myReportLoading, reload, reloadKey } = useAppData();
   const upcoming = useLive<Assignment[]>(subscribeToUpcoming, [reloadKey]);
   const users = useLive<UserProfile[]>(subscribeToUsers, [reloadKey]);
+  const groups = useLive<MinistryGroup[]>(subscribeToGroups, []);
+  const isGroupOverseer = (groups.data ?? []).some(group => group.overseerId === profile.id);
   const usersById = Object.fromEntries((users.data ?? []).map(u => [u.id, u]));
 
   const attention = attentionItems(upcoming.data ?? []);
@@ -39,7 +42,7 @@ export default function DashboardScreen() {
     { icon: 'calendar', label: settings.weekendName, onPress: () => nav.navigate('Week', { meeting: 'weekend' }) },
     { icon: 'people', label: 'People', onPress: () => nav.navigate('People') },
     { icon: 'groups', label: 'Ministry groups', onPress: () => nav.navigate('Groups') },
-    ...(profile.secretary ? [{ icon: 'report' as IconName, label: 'Group reports', onPress: () => nav.navigate('GroupReport', undefined) }] : []),
+    ...(profile.secretary || isGroupOverseer ? [{ icon: 'report' as IconName, label: 'Group reports', onPress: () => nav.navigate('GroupReport', undefined) }] : []),
     { icon: 'report' as IconName, label: 'Unassigned reports', onPress: () => nav.navigate('GroupReport', { unassigned: true }) },
     { icon: 'settings', label: 'Settings', onPress: () => nav.navigate('Settings') },
   ];
