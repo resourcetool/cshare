@@ -7,7 +7,7 @@ export const EMAILJS_CONFIG = {
   templateId: 'template_f1arceh',
 } as const;
 
-const VISIBLE_TO_EMAIL = 'YOUR_CONGREGATION_EMAIL@example.com';
+const VISIBLE_TO_EMAIL = 'csharehub@gmail.com';
 
 const VISIBLE_TO_NAME = 'CSHARE Congregation Members';
 
