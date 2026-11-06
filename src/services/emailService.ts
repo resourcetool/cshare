@@ -10,7 +10,7 @@ export const EMAILJS_CONFIG = {
 
 // CHANGE THIS to the congregation email address
 // that should appear in the visible To field.
-const VISIBLE_TO_EMAIL = 'your-congregation-email@example.com';
+const VISIBLE_TO_EMAIL = 'csharehub@gmail.com;
 
 const VISIBLE_TO_NAME = 'CSHARE Congregation Members';
 
