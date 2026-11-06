@@ -1,4 +1,3 @@
-
 const EMAILJS_ENDPOINT =
   'https://api.emailjs.com/api/v1.0/email/send';
 
@@ -8,9 +7,7 @@ export const EMAILJS_CONFIG = {
   templateId: 'template_f1arceh',
 } as const;
 
-// CHANGE THIS to the congregation email address
-// that should appear in the visible To field.
-const VISIBLE_TO_EMAIL = 'csharehub@gmail.com;
+const VISIBLE_TO_EMAIL = 'YOUR_CONGREGATION_EMAIL@example.com';
 
 const VISIBLE_TO_NAME = 'CSHARE Congregation Members';
 
@@ -31,23 +28,19 @@ export interface EmergencyEmailInput {
 export async function sendEmergencyEmail(
   input: EmergencyEmailInput,
 ): Promise<void> {
-  // Validate the visible recipient address.
   const visibleTo = VISIBLE_TO_EMAIL.trim().toLowerCase();
 
-  if (!visibleTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(visibleTo)) {
-    throw new Error(
-      'Please configure a valid congregation email address in VISIBLE_TO_EMAIL.',
-    );
+  if (!visibleTo) {
+    throw new Error('No visible To email address is configured.');
   }
 
-  // Collect and remove duplicate recipient addresses.
   const recipientEmails = Array.from(
     new Set(
       input.recipients
-        .map(recipient => recipient.email.trim().toLowerCase())
-        .filter(email =>
-          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
-        ),
+        .map(recipient =>
+          recipient.email.trim().toLowerCase(),
+        )
+        .filter(Boolean),
     ),
   );
 
@@ -57,16 +50,9 @@ export async function sendEmergencyEmail(
     );
   }
 
-  // Exclude the visible To address from BCC to prevent duplication.
   const blindCopies = recipientEmails.filter(
     email => email !== visibleTo,
   );
-
-  if (blindCopies.length === 0) {
-    throw new Error(
-      'No congregation members remain in BCC after excluding the visible To address.',
-    );
-  }
 
   const templateParams = {
     to_email: visibleTo,
@@ -75,8 +61,9 @@ export async function sendEmergencyEmail(
     subject: input.subject,
     message: input.message,
     from_name:
-      input.senderName?.trim() || 'CSHARE Administration',
-    reply_to: input.replyTo?.trim() || visibleTo,
+      input.senderName || 'CSHARE Administration',
+    reply_to:
+      input.replyTo || visibleTo,
   };
 
   const response = await fetch(EMAILJS_ENDPOINT, {
