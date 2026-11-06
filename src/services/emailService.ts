@@ -31,7 +31,9 @@ export async function sendEmergencyEmail(
   const visibleTo = VISIBLE_TO_EMAIL.trim().toLowerCase();
 
   if (!visibleTo) {
-    throw new Error('No visible To email address is configured.');
+    throw new Error(
+      'No visible To email address is configured.',
+    );
   }
 
   const recipientEmails = Array.from(
